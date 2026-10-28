@@ -1,6 +1,6 @@
 # Reusable CI for the Tauri apps: frontend checks, Rust checks (rust-runner),
 # an optional Windows job and a single `ci-ok` job to use as the required check.
-# The check recipes live in common.just, fetched from this repo into `.ci`.
+# The check recipes live in common.just, fetched from this repo (checked out to `.ci`, then moved to `$RUNNER_TEMP/ci`).
 name: Tauri CI
 
 on:
