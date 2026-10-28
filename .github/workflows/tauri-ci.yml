@@ -1,5 +1,14 @@
-# Reusable CI for the Tauri apps: frontend checks, Rust checks (rust-runner),
-# an optional Windows job and a single `ci-ok` job to use as the required check.
+# Reusable CI for the Tauri apps: frontend checks, Rust checks (rust-runner,
+# ubuntu-latest by default), a Windows job and a single `ci-ok` job to use as
+# the required check.
+#
+# The defaults keep billed minutes low (Linux 1x, Windows 2x, macOS 10x):
+# - Windows (`windows: auto`) runs on every event except pull requests; on a
+#   pull request only when it carries the `windows` label. A push to main always
+#   runs it, so it still gates the release. The caller re-runs CI when the label
+#   is added (`labeled` in examples/ci.yml).
+# - The Rust cache is saved only from main; PR runs restore it.
+#
 # The check recipes live in common.just, fetched from this repo (checked out to `.ci`, then moved to `$RUNNER_TEMP/ci`).
 name: Tauri CI
 
@@ -11,13 +20,16 @@ on:
         type: string
         default: v1
       rust-runner:
-        description: Runner for the Rust job. macOS avoids the webkit deps a Linux runner needs.
+        description: Runner for the Rust job. On Linux the Tauri system packages are installed first.
         type: string
-        default: macos-latest
+        default: ubuntu-latest
       windows:
-        description: Also run the Rust checks on windows-latest.
-        type: boolean
-        default: true
+        description: >-
+          When to run the Rust checks on windows-latest: `auto` (every event
+          except pull requests; pull requests only with the `windows` label),
+          `always` or `never`.
+        type: string
+        default: auto
       windows-test-scope:
         description: Arguments for `cargo test` on Windows (e.g. `-p my-core`).
         type: string
@@ -92,18 +104,23 @@ jobs:
 
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
 
-      # Tauri's build script links against the system WebKitGTK/GTK libraries.
+      # Tauri's build script links against the system WebKitGTK/GTK libraries;
+      # libdbus/pkg-config cover keyring and other D-Bus crates.
       - name: Install Tauri system dependencies
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             libwebkit2gtk-4.1-dev \
+            libjavascriptcoregtk-4.1-dev \
+            libsoup-3.0-dev \
             libgtk-3-dev \
             libayatana-appindicator3-dev \
             librsvg2-dev \
             libxdo-dev \
             libssl-dev \
+            libdbus-1-dev \
+            pkg-config \
             build-essential \
             file
 
@@ -112,9 +129,13 @@ jobs:
           toolchain: stable
           components: clippy, rustfmt
 
+      # Only main saves the cache (PRs restore it), so PR runs don't evict
+      # main's entries from the 10 GB repo cache.
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           key: ${{ runner.os }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-on-failure: true
 
       - name: Rust checks
         run: just -f "$RUNNER_TEMP/ci/common.just" -d . rust
@@ -126,7 +147,11 @@ jobs:
         run: just "$EXTRA_RECIPE"
 
   windows:
-    if: inputs.windows
+    if: >-
+      inputs.windows == 'always'
+      || (inputs.windows == 'auto'
+          && (github.event_name != 'pull_request'
+              || contains(github.event.pull_request.labels.*.name, 'windows')))
     runs-on: windows-latest
     timeout-minutes: 45
     env:
@@ -154,9 +179,13 @@ jobs:
           toolchain: stable
           components: clippy, rustfmt
 
+      # Only main saves the cache (PRs restore it), so PR runs don't evict
+      # main's entries from the 10 GB repo cache.
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           key: ${{ runner.os }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-on-failure: true
 
       - name: Rust checks
         run: just -f "$RUNNER_TEMP/ci/common.just" -d . rust
@@ -167,11 +196,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      # A skipped windows job (windows: false) is fine; failure or cancel is not.
+      # A skipped windows job (no `windows` label, or `windows: never`) is
+      # fine; failure or cancel is not.
       - name: Check results
         env:
           RESULTS: ${{ join(needs.*.result, ' ') }}
+          WINDOWS: ${{ inputs.windows }}
         run: |
+          case "$WINDOWS" in
+            auto | always | never) ;;
+            *)
+              echo "::error::Input windows must be auto, always or never (got '$WINDOWS')."
+              exit 1
+              ;;
+          esac
           echo "needed job results: $RESULTS"
           case " $RESULTS " in
             *" failure "* | *" cancelled "*) exit 1 ;;

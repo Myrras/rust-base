@@ -7,12 +7,13 @@
 # (e.g. `-p my-core` on the Windows runner).
 TEST_SCOPE := env("TEST_SCOPE", "--workspace")
 
-# Rustfmt, clippy and tests.
+# Rustfmt, clippy and tests. Rustfmt is skipped on Windows: its result is the
+# same on every OS and the rust job already checks it.
 rust:
     # `tauri::generate_context!` requires the frontendDist dir (../dist,
     # gitignored) to exist when src-tauri compiles.
     mkdir -p dist
-    cargo fmt --all --check
+    {{ if os() == "windows" { "" } else { "cargo fmt --all --check" } }}
     cargo clippy --workspace --all-targets -- -D warnings
     cargo test {{ TEST_SCOPE }}
 

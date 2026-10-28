@@ -1,14 +1,22 @@
 # Copy to .github/workflows/ci.yml in an app repo.
-# Every push to main (a merged PR) runs CI and then releases.
+# Every push to main (a merged PR) runs CI, including Windows, and then
+# releases. Pull requests run Windows only with the `windows` label; adding the
+# label re-runs CI for the PR. Any other label (e.g. patch/minor/major) starts
+# a run whose `ci` job is skipped: it doesn't cancel the running CI and adds
+# no `ci / ci-ok` check.
 name: CI
 
 on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # Labels other than `windows` get their own group, so they never cancel the
+  # running CI. Adding `windows` shares the group: it replaces the running CI
+  # with one that includes Windows, so only one `ci / ci-ok` is in flight.
+  group: ci-${{ github.ref }}${{ github.event.action == 'labeled' && github.event.label.name != 'windows' && format('-label-{0}', github.event.label.name) || '' }}
   # PRs: a new push cancels the running check. main: a running run is never
   # cancelled, but GitHub keeps only the newest pending run per group and
   # cancels older pending ones. Their merges ship in the next release, which
@@ -20,10 +28,13 @@ permissions:
 
 jobs:
   ci:
+    # Keep this condition: it is what stops an unrelated label from producing
+    # a skipped (= passing) `ci / ci-ok` check.
+    if: github.event.action != 'labeled' || github.event.label.name == 'windows'
     uses: RobbieMinderhoud/ci-workflows/.github/workflows/tauri-ci.yml@v1
     # with:
-    #   rust-runner: macos-latest
-    #   windows: true
+    #   rust-runner: ubuntu-latest
+    #   windows: auto                    # auto | always | never
     #   windows-test-scope: -p my-core   # default: --workspace
     #   extra-recipe: ''                 # recipe from this repo's justfile
     #   ci-ref: v1
