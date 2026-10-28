@@ -1,0 +1,41 @@
+# Copy to .github/workflows/ci.yml in an app repo.
+# Every push to main (a merged PR) runs CI and then releases.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  # Never cancel on main: a cancelled run would leave a merge without a version.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    uses: RobbieMinderhoud/ci-workflows/.github/workflows/tauri-ci.yml@v1
+    # with:
+    #   rust-runner: macos-latest
+    #   windows: true
+    #   windows-test-scope: -p my-core   # default: --workspace
+    #   extra-recipe: ''                 # recipe from this repo's justfile
+    #   ci-ref: v1
+
+  release:
+    needs: ci
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    uses: RobbieMinderhoud/ci-workflows/.github/workflows/release.yml@v1
+    permissions:
+      contents: write
+      pull-requests: read
+      actions: write
+    # with:
+    #   title-prefix: ''
+    #   require-deploy-key: false
+    #   ci-ref: v1
+    secrets:
+      RELEASE_DEPLOY_KEY: ${{ secrets.RELEASE_DEPLOY_KEY }}
