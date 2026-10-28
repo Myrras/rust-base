@@ -1,0 +1,171 @@
+# Release on every push to main (a merged PR). Turns CHANGELOG.md's
+# `## [Unreleased]` section into the next version (patch, or minor/major via a
+# PR label), bumps the manifests, commits `Release vX.Y.Z [skip ci]` to main,
+# tags it, creates the GitHub Release and dispatches the caller's build.yml,
+# which attaches the installers. pr-checks.yml makes every PR add that entry
+# and carry exactly one release label.
+#
+# Caller job (needs its CI job, runs only on push to main):
+#   permissions: { contents: write, pull-requests: read, actions: write }
+#   secrets: { RELEASE_DEPLOY_KEY: ${{ secrets.RELEASE_DEPLOY_KEY }} }
+name: release
+
+on:
+  workflow_call:
+    inputs:
+      ci-ref:
+        description: Ref of RobbieMinderhoud/ci-workflows to fetch the shared scripts from.
+        type: string
+        default: v1
+      title-prefix:
+        description: >-
+          Prefix for the GitHub Release title and the tag message, joined with a
+          space (`Podium` → `Podium v1.2.3`). Empty: title `v1.2.3`, tag message
+          `Release v1.2.3`.
+        type: string
+        default: ""
+      require-deploy-key:
+        description: Fail instead of warn when RELEASE_DEPLOY_KEY is not set (main is protected).
+        type: boolean
+        default: false
+    secrets:
+      RELEASE_DEPLOY_KEY:
+        description: >-
+          Private half of a write-enabled deploy key. Pushing over SSH with it
+          lets the release commit through a protected main via the ruleset's
+          DeployKey bypass.
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # Never run two releases at once; a queued run must see the previous run's
+    # release commit. Groups are per repository, so callers don't collide.
+    concurrency:
+      group: release
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      pull-requests: read
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      # A repo with an unprotected main can release with GITHUB_TOKEN, so a
+      # missing key only warns unless the caller sets require-deploy-key. On a
+      # protected main a GITHUB_TOKEN push is rejected with an opaque GH013, and
+      # this message names the fix.
+      - name: Deploy key configured?
+        env:
+          HAS_KEY: ${{ secrets.RELEASE_DEPLOY_KEY != '' }}
+          REQUIRE_KEY: ${{ inputs.require-deploy-key }}
+        run: |
+          fix="ssh-keygen -t ed25519 -N '' -C release -f release_key; gh repo deploy-key add release_key.pub --allow-write --title 'CI release'; gh secret set RELEASE_DEPLOY_KEY < release_key; delete both key files; add DeployKey as a bypass actor on main's ruleset; pass RELEASE_DEPLOY_KEY to release.yml under the caller job's secrets (no secrets: inherit)."
+          if [ "$HAS_KEY" != "true" ]; then
+            if [ "$REQUIRE_KEY" = "true" ]; then
+              echo "::error title=RELEASE_DEPLOY_KEY missing::The release push needs a deploy key. $fix"
+              exit 1
+            fi
+            echo "::warning title=RELEASE_DEPLOY_KEY not set::Pushing the release with GITHUB_TOKEN. That only works while main is unprotected. For a protected main: $fix"
+          fi
+
+      # The caller repo, at main rather than the pushed sha: a queued second run
+      # must see the first run's release commit, or it would release the same
+      # version twice. With the deploy key, checkout configures SSH so the push
+      # below uses it; unset, the secret is an empty string and checkout falls
+      # back to GITHUB_TOKEN over HTTPS.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          ssh-key: ${{ secrets.RELEASE_DEPLOY_KEY }}
+
+      # Shared scripts, as an untracked dir inside the caller checkout.
+      # `git commit -a` below only stages tracked files, so it never lands in
+      # the release commit.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: RobbieMinderhoud/ci-workflows
+          ref: ${{ inputs.ci-ref }}
+          path: .ci
+          persist-credentials: false
+
+      # An empty Unreleased section means an earlier run already released this.
+      - name: Anything to release?
+        id: pending
+        run: |
+          if bash .ci/scripts/changelog.sh unreleased > "$RUNNER_TEMP/notes.md"; then
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Nothing under ## [Unreleased]; already released."
+          fi
+
+      # No v* tag yet (a fresh app): the first release ships the version that is
+      # already in Cargo.toml instead of bumping it.
+      - name: Determine version
+        if: steps.pending.outputs.release == 'true'
+        run: |
+          if prev=$(git describe --tags --match 'v[0-9]*' --abbrev=0 2>/dev/null); then
+            labels=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" --jq '[.[0].labels[]?.name] | join(",")')
+            tag=$(bash .ci/scripts/next-version.sh "$prev" "$labels")
+            echo "$prev → $tag (labels: ${labels:-none})"
+          else
+            tag="v$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
+            echo "no v* tag yet → first release $tag"
+          fi
+          echo "TAG=$tag" >> "$GITHUB_ENV"
+          echo "VERSION=${tag#v}" >> "$GITHUB_ENV"
+
+      - name: Bump CHANGELOG, manifests and Cargo.lock
+        if: steps.pending.outputs.release == 'true'
+        run: |
+          bash .ci/scripts/changelog.sh release "$VERSION" "$(date -u +%F)"
+          bash .ci/scripts/sync-version.sh --set "$VERSION"
+          cargo update --workspace
+          bash .ci/scripts/sync-version.sh --check
+          git diff --stat
+
+      - name: Release title
+        if: steps.pending.outputs.release == 'true'
+        env:
+          TITLE_PREFIX: ${{ inputs.title-prefix }}
+        run: |
+          if [ -n "$TITLE_PREFIX" ]; then
+            title="$TITLE_PREFIX $TAG"
+            tag_message="$title"
+          else
+            title="$TAG"
+            tag_message="Release $TAG"
+          fi
+          echo "TITLE=$title" >> "$GITHUB_ENV"
+          echo "TAG_MESSAGE=$tag_message" >> "$GITHUB_ENV"
+
+      # `[skip ci]`: a push made with the deploy key (unlike one with
+      # GITHUB_TOKEN) triggers workflows, and CI on the release commit or a
+      # build on its tag would only repeat work. build.yml is dispatched below.
+      - name: Commit, tag and push
+        if: steps.pending.outputs.release == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git commit -am "Release $TAG [skip ci]"
+          git tag -a "$TAG" -m "$TAG_MESSAGE"
+          git push --atomic origin HEAD:main "$TAG"
+
+      - name: Create GitHub Release
+        if: steps.pending.outputs.release == 'true'
+        run: gh release create "$TAG" --title "$TITLE" --notes-file "$RUNNER_TEMP/notes.md" --verify-tag
+
+      # The one and only installer build for a release: the caller's build.yml
+      # has no tag trigger, so it never depends on whether [skip ci] also
+      # suppresses the tag push. build.yml attaches the installers to the
+      # release. GITHUB_REPOSITORY is the caller repo, so this dispatches its
+      # build.yml, not this repo's.
+      - name: Build installers
+        if: steps.pending.outputs.release == 'true'
+        run: gh workflow run build.yml --ref "$TAG"
