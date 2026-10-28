@@ -10,7 +10,7 @@ All are `on: workflow_call` only. Every workflow takes `ci-ref` (string, default
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `tauri-ci.yml`    | `rust-runner` (default `ubuntu-latest`; on Linux the Tauri apt packages are installed first), `windows` (string, default `auto`; `auto`, `always` or `never`, see [Windows checks](#windows-checks-and-the-windows-label)), `windows-test-scope` (default `--workspace`), `extra-recipe` (default empty; runs `just <extra-recipe>` from the repo justfile after the rust recipe)    | none                                                               | Jobs `frontend`, `rust`, `windows`, `ci-ok` (aggregate gate; a skipped windows job is fine). The Rust cache is saved only on `main`.                                                             |
 | `release.yml`     | `title-prefix` (default empty; joined with a space, so no trailing space), `require-deploy-key` (bool, default `false`)                                                                                                                                                                                                                                                              | `RELEASE_DEPLOY_KEY` (optional)                                    | Caller grants `contents: write, pull-requests: read, actions: write`. Dispatches the caller's `build.yml` with `--ref <tag>`. A missing deploy key only warns unless `require-deploy-key: true`. |
-| `pr-checks.yml`   | `ci-ref` only                                                                                                                                                                                                                                                                                                                                                                        | none                                                               | Changelog entry gate and patch/minor/major label gate.                                                                                                                                           |
+| `pr-checks.yml`   | `ci-ref` only                                                                                                                                                                                                                                                                                                                                                                        | none                                                               | Changelog entry gate and patch/minor/major/no-release label gate.                                                                                                                                |
 | `build.yml`       | `ci-ref` only                                                                                                                                                                                                                                                                                                                                                                        | none                                                               | macOS + Windows matrix, installers (dmg, NSIS), uploads artifacts, attaches them to the GitHub Release on `refs/tags/v*`.                                                                        |
 | `integration.yml` | `runner` (default `ubuntu-latest`), `apt-packages` (default empty), `setup-wsl` (bool, default `false`), `wsl-distro` (default `Ubuntu-24.04`), `wsl-packages` (default empty; packages installed inside the WSL distro), `env` (default empty; extra `KEY=value` lines written to `GITHUB_ENV`, not for secrets), `recipe` (default `test-integration`, run from the repo justfile) | `INTEGRATION_TOKEN` (optional, exposed as env `INTEGRATION_TOKEN`) | Covers DB drivers, ssh, WSL and real-API tests.                                                                                                                                                  |
 
@@ -48,6 +48,8 @@ Copy the matching file into the repo's `.github/workflows/` and adjust the input
 
 Callers set `labels: ["patch", "dependencies"]` per ecosystem in `.github/dependabot.yml` (see [`examples/dependabot.yaml`](examples/dependabot.yaml); copy it to `.github/dependabot.yml`), so the release-label gate passes with `patch`. The changelog gate is skipped for Dependabot PRs (judged on the PR author). A deps-only merge has no CHANGELOG entry, so `release.yml` finds nothing to release; the bumps ship with the next release.
 
+The npm entry ignores semver-major `typescript` updates: typescript-eslint doesn't support TypeScript 7 yet. Remove the `ignore` block when it does.
+
 ## Windows checks and the `windows` label
 
 Billed minutes count Linux 1×, Windows 2× and macOS 10×, so by default only `main` pays for Windows:
@@ -79,6 +81,14 @@ Copy this into the app's `CLAUDE.md`. Add `windows` to a PR when it:
 
 Skip it for frontend-only, docs-only and purely cross-platform logic changes. If unsure, add it: `main` runs Windows after the merge anyway, and a failure there blocks the release.
 
+## The `no-release` label
+
+Use `no-release` instead of patch/minor/major on PRs that shouldn't release: CI, config, docs and tooling-only changes. The `Release label` gate accepts exactly one of `patch`, `minor`, `major` or `no-release`, and the `Changelog entry` gate is skipped for PRs with `no-release`. pr-checks runs on labeled/unlabeled, so adding or removing the label re-evaluates the gates.
+
+With no CHANGELOG entry, the merge leaves nothing pending and `release.yml` reports "nothing to release". The label is never read as a bump: the bump step only looks at `major` and `minor`, and only runs when something is pending. If a `no-release` PR does add `## [Unreleased]` entries, they ship with the next release.
+
+The label must exist in each repo: `gh label create no-release --color ededed --description "Merge without a release (CI, config, docs)"`.
+
 ## Required checks
 
 In each app repo's branch protection (or ruleset) for `main`, require:
@@ -94,7 +104,7 @@ Don't require `ci / frontend`, `ci / rust` or `ci / windows`: `ci-ok` aggregates
 - **`ci-ref`:** defaults to `v1`. To test a branch of this repo, change both the `@ref` in `uses:` and `ci-ref` to that branch.
 - **Changelog:** `CHANGELOG.md` must have a `## [Unreleased]` heading; a release without it fails.
 - **Release bump:** the highest of patch, minor and major across all PRs since the last tag.
-- **Labels:** `patch`, `minor`, `major` and `windows` must exist in the repo.
+- **Labels:** `patch`, `minor`, `major`, `no-release` and `windows` must exist in the repo.
 - **Linux Rust job:** the workspace must build and pass `cargo test --workspace` on `ubuntu-latest` with the packages installed by `tauri-ci.yml` (WebKitGTK 4.1, libsoup 3, JavaScriptCoreGTK 4.1, appindicator, librsvg, libxdo, OpenSSL, D-Bus, pkg-config). Gate tests that need a desktop session or macOS behind `cfg`, or set `rust-runner: macos-latest`.
 
 ## Versioning
