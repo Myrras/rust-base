@@ -13,12 +13,18 @@ check() {
 
 check v2.1.2 "" v2.1.3
 check v2.1.2 "bug,docs" v2.1.3
-check v2.1.2 "minor" v2.2.0
-check v2.1.2 "major" v3.0.0
-check v2.1.2 "minor,major" v3.0.0
-check v2.9.9 "minor" v2.10.0
+check v2.1.2 "release:patch" v2.1.3
+check v2.1.2 "release:minor" v2.2.0
+check v2.1.2 "release:major" v3.0.0
+check v2.1.2 "release:minor,release:major" v3.0.0
+check v2.9.9 "release:minor" v2.10.0
+# Dependabot's bare semver labels are not release labels.
+check v2.1.2 "major" v2.1.3
+check v2.1.2 "minor" v2.1.3
+check v2.1.2 "major,dependencies" v2.1.3
+check v2.1.2 "major,release:minor" v2.2.0
 check v2.1.9 "" v2.1.10
-check v2.1.2 "not-minor" v2.1.3
+check v2.1.2 "not-release:minor" v2.1.3
 
 if "$script" "" "" 2>/dev/null; then
   echo "next-version: expected failure without a previous tag"
