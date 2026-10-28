@@ -1,8 +1,10 @@
 # Pull request gates for the release flow in release.yml:
 # - changelog: the PR adds an entry under `## [Unreleased]` in CHANGELOG.md
-#   (merging to main releases it).
-# - release-label: the PR carries exactly one of `patch`, `minor` or `major`;
-#   it decides the version bump on merge (scripts/next-version.sh).
+#   (merging to main releases it). Skipped for Dependabot PRs and PRs labelled
+#   `no-release`.
+# - release-label: the PR carries exactly one of `patch`, `minor`, `major` or
+#   `no-release`; the first three decide the version bump on merge
+#   (scripts/next-version.sh), `no-release` marks a CI/config/docs-only PR.
 #
 # The caller triggers on pull_request with the label event types (see
 # examples/pr-checks.yml), separate from CI so that labelling a PR doesn't
@@ -27,11 +29,16 @@ defaults:
 jobs:
   changelog:
     name: Changelog entry
-    # Skipped for Dependabot PRs. Judged on the PR author, not github.actor,
+    # Skipped for Dependabot PRs and PRs labelled `no-release` (the workflow
+    # re-runs on labeled/unlabeled). Judged on the PR author, not github.actor,
     # which changes when someone rebases the PR. A deps-only merge has no
     # CHANGELOG entry, so release.yml treats it as "nothing to release"; the
-    # bumps ship with the next release.
-    if: github.event_name == 'pull_request' && github.event.pull_request.user.login != 'dependabot[bot]'
+    # bumps ship with the next release. Likewise a `no-release` PR that adds no
+    # entry; if it does add Unreleased entries they ship with the next release.
+    if: >-
+      github.event_name == 'pull_request'
+      && github.event.pull_request.user.login != 'dependabot[bot]'
+      && !contains(github.event.pull_request.labels.*.name, 'no-release')
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -69,8 +76,8 @@ jobs:
         env:
           LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: |
-          count=$(jq '[.[] | select(. == "patch" or . == "minor" or . == "major")] | length' <<< "$LABELS")
+          count=$(jq '[.[] | select(. == "patch" or . == "minor" or . == "major" or . == "no-release")] | length' <<< "$LABELS")
           if [ "$count" -ne 1 ]; then
-            echo "::error::Add exactly one release label to this PR: patch, minor or major (found $count)."
+            echo "::error::Add exactly one release label to this PR: patch, minor, major, or no-release for CI/config/docs-only changes that shouldn't release (found $count)."
             exit 1
           fi
