@@ -25,7 +25,11 @@ on:
       extra-recipe:
         description: Recipe from the caller's justfile to run after the rust recipe, on the rust runner.
         type: string
-        default: ''
+        default: ""
+
+defaults:
+  run:
+    shell: bash
 
 permissions:
   contents: read
@@ -36,6 +40,8 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Fetch shared CI files
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -43,6 +49,10 @@ jobs:
           repository: RobbieMinderhoud/ci-workflows
           ref: ${{ inputs.ci-ref }}
           path: .ci
+          persist-credentials: false
+
+      - name: Move shared CI files out of the workspace
+        run: mv .ci "$RUNNER_TEMP/ci"
 
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
 
@@ -59,13 +69,15 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Frontend checks
-        run: just -f .ci/common.just -d . frontend
+        run: just -f "$RUNNER_TEMP/ci/common.just" -d . frontend
 
   rust:
     runs-on: ${{ inputs.rust-runner }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Fetch shared CI files
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -73,6 +85,10 @@ jobs:
           repository: RobbieMinderhoud/ci-workflows
           ref: ${{ inputs.ci-ref }}
           path: .ci
+          persist-credentials: false
+
+      - name: Move shared CI files out of the workspace
+        run: mv .ci "$RUNNER_TEMP/ci"
 
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
 
@@ -101,7 +117,7 @@ jobs:
           key: ${{ runner.os }}
 
       - name: Rust checks
-        run: just -f .ci/common.just -d . rust
+        run: just -f "$RUNNER_TEMP/ci/common.just" -d . rust
 
       - name: Extra recipe
         if: inputs.extra-recipe != ''
@@ -117,6 +133,8 @@ jobs:
       TEST_SCOPE: ${{ inputs.windows-test-scope }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Fetch shared CI files
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -124,6 +142,10 @@ jobs:
           repository: RobbieMinderhoud/ci-workflows
           ref: ${{ inputs.ci-ref }}
           path: .ci
+          persist-credentials: false
+
+      - name: Move shared CI files out of the workspace
+        run: mv .ci "$RUNNER_TEMP/ci"
 
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
 
@@ -137,7 +159,7 @@ jobs:
           key: ${{ runner.os }}
 
       - name: Rust checks
-        run: just -f .ci/common.just -d . rust
+        run: just -f "$RUNNER_TEMP/ci/common.just" -d . rust
 
   ci-ok:
     if: always()

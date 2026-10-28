@@ -58,6 +58,10 @@ on:
         description: Token for tests that talk to a real external API; exposed as env INTEGRATION_TOKEN.
         required: false
 
+defaults:
+  run:
+    shell: bash
+
 permissions:
   contents: read
 
@@ -66,11 +70,10 @@ jobs:
     name: Integration tests
     runs-on: ${{ inputs.runner }}
     timeout-minutes: 45
-    defaults:
-      run:
-        shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Install apt packages
         if: runner.os == 'Linux' && inputs.apt-packages != ''
