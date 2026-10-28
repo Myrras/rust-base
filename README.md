@@ -29,6 +29,8 @@ In CI the recipes run as `just -f "$RUNNER_TEMP/ci/common.just" -d . <recipe>`. 
 import? '~/.ci-workflows/common.just'
 ```
 
+Callers point `~/.ci-workflows` at their local clone of this repo, e.g. `ln -s /path/to/ci-workflows ~/.ci-workflows`.
+
 A repo justfile keeps its own `test-integration` and extra recipes, and must not redefine the names above.
 
 In CI the `import?` resolves to nothing, because the path under `~` does not exist on the runner. Caller recipes that CI runs (`test-integration`, `extra-recipe`) must therefore not depend on recipes from `common.just`.
