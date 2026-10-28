@@ -34,7 +34,7 @@ jobs:
       pull-requests: read
       actions: write
     # with:
-    #   title-prefix: ''
+    #   title-prefix: MyApp   # no trailing space; title becomes "MyApp v1.2.3"
     #   require-deploy-key: false
     #   ci-ref: v1
     secrets:
