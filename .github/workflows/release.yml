@@ -1,9 +1,13 @@
 # Release on every push to main (a merged PR). Turns CHANGELOG.md's
-# `## [Unreleased]` section into the next version (patch, or minor/major via a
-# PR label), bumps the manifests, commits `Release vX.Y.Z [skip ci]` to main,
-# tags it, creates the GitHub Release and dispatches the caller's build.yml,
-# which attaches the installers. pr-checks.yml makes every PR add that entry
-# and carry exactly one release label.
+# `## [Unreleased]` section into the next version, bumps the manifests, commits
+# `Release vX.Y.Z [skip ci]` to main, tags it, creates the GitHub Release and
+# dispatches the caller's build.yml, which attaches the installers.
+# pr-checks.yml makes every PR add that entry and carry exactly one release
+# label (patch, minor or major).
+#
+# One release can cover several merged PRs: GitHub cancels a pending run on
+# main when a newer one queues, even with cancel-in-progress: false. The bump is
+# therefore the highest label over every PR merged since the previous release.
 #
 # Caller job (needs its CI job, runs only on push to main):
 #   permissions: { contents: write, pull-requests: read, actions: write }
@@ -20,7 +24,7 @@ on:
       title-prefix:
         description: >-
           Prefix for the GitHub Release title and the tag message, joined with a
-          space (`Podium` → `Podium v1.2.3`). Empty: title `v1.2.3`, tag message
+          space (`MyApp` → `MyApp v1.2.3`). Empty: title `v1.2.3`, tag message
           `Release v1.2.3`.
         type: string
         default: ""
@@ -39,13 +43,19 @@ on:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   release:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     # Never run two releases at once; a queued run must see the previous run's
-    # release commit. Groups are per repository, so callers don't collide.
+    # release commit. Groups are per repository, so callers don't collide. A
+    # pending run that a newer one replaces is cancelled; the newer run then
+    # releases its changes too.
     concurrency:
       group: release
       cancel-in-progress: false
@@ -85,38 +95,89 @@ jobs:
           fetch-depth: 0
           ssh-key: ${{ secrets.RELEASE_DEPLOY_KEY }}
 
-      # Shared scripts, as an untracked dir inside the caller checkout.
-      # `git commit -a` below only stages tracked files, so it never lands in
-      # the release commit.
+      # Shared scripts, moved out of the caller checkout so they can never
+      # land in the release commit.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: RobbieMinderhoud/ci-workflows
           ref: ${{ inputs.ci-ref }}
           path: .ci
           persist-credentials: false
+      - run: mv .ci "$RUNNER_TEMP/ci"
 
-      # An empty Unreleased section means an earlier run already released this.
+      # changelog.sh exits 1 for an empty Unreleased section: an earlier run
+      # already released this, so the run stays green. Any other failure (no
+      # CHANGELOG.md, no `## [Unreleased]` heading: exit 2) fails the run.
       - name: Anything to release?
         id: pending
         run: |
-          if bash .ci/scripts/changelog.sh unreleased > "$RUNNER_TEMP/notes.md"; then
-            echo "release=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "Nothing under ## [Unreleased]; already released."
-          fi
+          status=0
+          bash "$RUNNER_TEMP/ci/scripts/changelog.sh" unreleased > "$RUNNER_TEMP/notes.md" || status=$?
+          case $status in
+            0) echo "release=true" >> "$GITHUB_OUTPUT" ;;
+            1) echo "::notice::Nothing under ## [Unreleased] in CHANGELOG.md; already released." ;;
+            *) echo "::error file=CHANGELOG.md::changelog.sh failed (exit $status); see the message above."
+               exit "$status" ;;
+          esac
 
-      # No v* tag yet (a fresh app): the first release ships the version that is
-      # already in Cargo.toml instead of bumping it.
-      - name: Determine version
+      # The latest final release tag reachable from main. Prerelease tags
+      # (v1.2.0-rc.1) don't count. Empty for a fresh app.
+      - name: Previous release
+        id: prev
         if: steps.pending.outputs.release == 'true'
         run: |
-          if prev=$(git describe --tags --match 'v[0-9]*' --abbrev=0 2>/dev/null); then
-            labels=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" --jq '[.[0].labels[]?.name] | join(",")')
-            tag=$(bash .ci/scripts/next-version.sh "$prev" "$labels")
-            echo "$prev → $tag (labels: ${labels:-none})"
+          prev=$(git tag --merged HEAD --list 'v*' --sort=-v:refname | awk '/^v[0-9]+\.[0-9]+\.[0-9]+$/ && !found++')
+          echo "previous release: ${prev:-none}"
+          echo "tag=$prev" >> "$GITHUB_OUTPUT"
+
+      # Label aggregation. One release can cover several merged PRs (see
+      # the header), so the bump is the highest of major > minor > patch over
+      # the labels of every PR merged since PREV: one lookup per first-parent
+      # commit on main, skipping earlier `Release v*` commits. No PREV: all
+      # first-parent commits. A commit without a PR (direct push) adds no label.
+      # Kept self-contained (reads only PREV, GITHUB_REPOSITORY, git, gh) so a
+      # local harness can run it against a fake repo with a stubbed gh. Skipped
+      # for a first release, whose version comes from Cargo.toml.
+      - name: Release bump from merged PRs
+        id: bump
+        if: steps.pending.outputs.release == 'true' && steps.prev.outputs.tag != ''
+        env:
+          PREV: ${{ steps.prev.outputs.tag }}
+        run: |
+          if [ -n "$PREV" ]; then range="$PREV..HEAD"; else range=HEAD; fi
+          shas=$(git rev-list --first-parent "$range")
+          labels=""
+          for sha in $shas; do
+            subject=$(git log -1 --format=%s "$sha")
+            case $subject in
+              "Release v"*) echo "$sha: skipped ($subject)"; continue ;;
+            esac
+            pr_labels=$(gh api "repos/$GITHUB_REPOSITORY/commits/$sha/pulls" --jq '[.[0].labels[]?.name] | join(",")')
+            echo "$sha: ${pr_labels:-no PR labels} ($subject)"
+            labels="$labels,$pr_labels"
+          done
+          case "$labels," in
+            *,major,*) bump="major" ;;
+            *,minor,*) bump="minor" ;;
+            *) bump="patch" ;;
+          esac
+          echo "bump: $bump"
+          echo "bump=$bump" >> "$GITHUB_OUTPUT"
+
+      # No release tag yet (a fresh app): the first release ships the version
+      # that is already in Cargo.toml instead of bumping it.
+      - name: Determine version
+        if: steps.pending.outputs.release == 'true'
+        env:
+          PREV: ${{ steps.prev.outputs.tag }}
+          BUMP: ${{ steps.bump.outputs.bump }}
+        run: |
+          if [ -n "$PREV" ]; then
+            tag=$(bash "$RUNNER_TEMP/ci/scripts/next-version.sh" "$PREV" "$BUMP")
+            echo "$PREV → $tag ($BUMP)"
           else
             tag="v$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
-            echo "no v* tag yet → first release $tag"
+            echo "no release tag yet → first release $tag"
           fi
           echo "TAG=$tag" >> "$GITHUB_ENV"
           echo "VERSION=${tag#v}" >> "$GITHUB_ENV"
@@ -124,10 +185,10 @@ jobs:
       - name: Bump CHANGELOG, manifests and Cargo.lock
         if: steps.pending.outputs.release == 'true'
         run: |
-          bash .ci/scripts/changelog.sh release "$VERSION" "$(date -u +%F)"
-          bash .ci/scripts/sync-version.sh --set "$VERSION"
+          bash "$RUNNER_TEMP/ci/scripts/changelog.sh" release "$VERSION" "$(date -u +%F)"
+          bash "$RUNNER_TEMP/ci/scripts/sync-version.sh" --set "$VERSION"
           cargo update --workspace
-          bash .ci/scripts/sync-version.sh --check
+          bash "$RUNNER_TEMP/ci/scripts/sync-version.sh" --check
           git diff --stat
 
       - name: Release title
@@ -148,17 +209,32 @@ jobs:
       # `[skip ci]`: a push made with the deploy key (unlike one with
       # GITHUB_TOKEN) triggers workflows, and CI on the release commit or a
       # build on its tag would only repeat work. build.yml is dispatched below.
+      # If main moved since checkout (another PR merged), the atomic push is
+      # rejected as non-fast-forward / fetch first and nothing is pushed. That
+      # merge's own run releases both, so this run ends green without a
+      # release. Any other push error fails.
       - name: Commit, tag and push
+        id: push
         if: steps.pending.outputs.release == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
           git commit -am "Release $TAG [skip ci]"
           git tag -a "$TAG" -m "$TAG_MESSAGE"
-          git push --atomic origin HEAD:main "$TAG"
+          status=0
+          out=$(git push --atomic origin HEAD:main "$TAG" 2>&1) || status=$?
+          printf '%s\n' "$out"
+          if [ "$status" -ne 0 ]; then
+            if grep -qE '\[rejected\] +HEAD -> main \((non-fast-forward|fetch first)\)' <<< "$out"; then
+              echo "::notice::main moved; the newer run will release"
+              exit 0
+            fi
+            exit "$status"
+          fi
+          echo "pushed=true" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
-        if: steps.pending.outputs.release == 'true'
+        if: steps.push.outputs.pushed == 'true'
         run: gh release create "$TAG" --title "$TITLE" --notes-file "$RUNNER_TEMP/notes.md" --verify-tag
 
       # The one and only installer build for a release: the caller's build.yml
@@ -167,5 +243,5 @@ jobs:
       # release. GITHUB_REPOSITORY is the caller repo, so this dispatches its
       # build.yml, not this repo's.
       - name: Build installers
-        if: steps.pending.outputs.release == 'true'
+        if: steps.push.outputs.pushed == 'true'
         run: gh workflow run build.yml --ref "$TAG"

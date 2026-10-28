@@ -9,7 +9,10 @@ on:
 
 concurrency:
   group: ci-${{ github.ref }}
-  # Never cancel on main: a cancelled run would leave a merge without a version.
+  # PRs: a new push cancels the running check. main: a running run is never
+  # cancelled, but GitHub keeps only the newest pending run per group and
+  # cancels older pending ones. Their merges ship in the next release, which
+  # takes the highest release label over all PRs merged since the last tag.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
