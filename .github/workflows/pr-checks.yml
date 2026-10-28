@@ -20,6 +20,10 @@ on:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   changelog:
     name: Changelog entry
@@ -38,13 +42,14 @@ jobs:
           ref: ${{ inputs.ci-ref }}
           path: .ci
           persist-credentials: false
+      - run: mv .ci "$RUNNER_TEMP/ci"
 
       - name: PR adds a CHANGELOG entry
         env:
           BASE_REF: ${{ github.base_ref }}
         run: |
           if ! git diff --name-only "origin/$BASE_REF...HEAD" | grep -qx CHANGELOG.md \
-            || ! bash .ci/scripts/changelog.sh unreleased >/dev/null; then
+            || ! bash "$RUNNER_TEMP/ci/scripts/changelog.sh" unreleased >/dev/null; then
             echo "::error file=CHANGELOG.md::Add an entry for this change under '## [Unreleased]' in CHANGELOG.md (Keep a Changelog headings, user-facing voice). Merging to main releases it."
             exit 1
           fi
