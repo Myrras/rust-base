@@ -1,0 +1,15 @@
+name: Build
+
+# release.yml (shared release workflow) dispatches this file by name with
+# `--ref <tag>`, so it must stay named `build.yml`.
+# Also runnable by hand from the Actions tab, or for a hand-pushed tag with
+# `gh workflow run build.yml --ref vX.Y.Z`.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    uses: RobbieMinderhoud/ci-workflows/.github/workflows/build.yml@v1
