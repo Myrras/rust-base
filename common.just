@@ -7,8 +7,10 @@
 # (e.g. `-p my-core` on the Windows runner).
 TEST_SCOPE := env("TEST_SCOPE", "--workspace")
 
-# Rustfmt, clippy and tests. Rustfmt is skipped on Windows: its result is the
-# same on every OS and the rust job already checks it.
+# Rustfmt is skipped on Windows: its result is the same on every OS and the
+# rust job already checks it.
+
+# Rustfmt (not on Windows), clippy and tests.
 rust:
     # `tauri::generate_context!` requires the frontendDist dir (../dist,
     # gitignored) to exist when src-tauri compiles.

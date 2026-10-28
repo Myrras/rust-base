@@ -27,7 +27,11 @@ defaults:
 jobs:
   changelog:
     name: Changelog entry
-    if: github.event_name == 'pull_request'
+    # Skipped for Dependabot PRs. Judged on the PR author, not github.actor,
+    # which changes when someone rebases the PR. A deps-only merge has no
+    # CHANGELOG entry, so release.yml treats it as "nothing to release"; the
+    # bumps ship with the next release.
+    if: github.event_name == 'pull_request' && github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:

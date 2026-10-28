@@ -33,7 +33,7 @@ Callers point `~/.ci-workflows` at their local clone of this repo, e.g. `ln -s /
 
 A repo justfile keeps its own `test-integration` and extra recipes, and must not redefine the names above.
 
-In CI the `import?` resolves to nothing, because the path under `~` does not exist on the runner. Caller recipes that CI runs (`test-integration`, `extra-recipe`) must therefore not depend on recipes from `common.just`.
+In CI the `import?` resolves to nothing, because the path under `~` does not exist on the runner. No recipe in a caller justfile may list a `common.just` recipe as a dependency (`foo: build-signed`): the dependency is unknown, so the whole file fails to parse and breaks every recipe CI runs (`test-integration`, `extra-recipe`). Call it in the body instead (`just build-signed`). Verify with `HOME=$(mktemp -d) just --list`, which simulates CI by leaving the import unresolved.
 
 ## Caller setup
 
@@ -43,6 +43,10 @@ Copy the matching file into the repo's `.github/workflows/` and adjust the input
 - [`examples/pr-checks.yml`](examples/pr-checks.yml): calls `pr-checks.yml`
 - [`examples/build.yml`](examples/build.yml): `workflow_dispatch`, calls `build.yml`
 - [`examples/integration.yml`](examples/integration.yml): nightly cron + dispatch, calls `integration.yml`
+
+## Dependabot
+
+Callers set `labels: ["patch", "dependencies"]` per ecosystem in `.github/dependabot.yml` (see [`examples/dependabot.yaml`](examples/dependabot.yaml); copy it to `.github/dependabot.yml`), so the release-label gate passes with `patch`. The changelog gate is skipped for Dependabot PRs (judged on the PR author). A deps-only merge has no CHANGELOG entry, so `release.yml` finds nothing to release; the bumps ship with the next release.
 
 ## Windows checks and the `windows` label
 
@@ -58,6 +62,8 @@ Billed minutes count Linux 1×, Windows 2× and macOS 10×, so by default only `
 `windows: always` runs it on every event, `windows: never` never.
 
 The label trigger lives in the caller (see [`examples/ci.yml`](examples/ci.yml)): `labeled` in `pull_request.types`, a concurrency group that only the `windows` label shares with the running CI, and an `if:` on the `ci` job. Keep all three. Without the `if:`, a `patch` label would re-run CI; if the skip were inside `tauri-ci.yml` instead, the skipped `ci / ci-ok` would count as passing and replace a real result. A skipped caller job reports only as `ci`, so `ci / ci-ok` stays the result of the last real run. Adding `windows` re-runs frontend and Rust too, so the run still yields one complete `ci / ci-ok`. Removing the label doesn't trigger a run.
+
+If a push and the `windows` label arrive within seconds, the push run (without the label) can cancel the label run, so Windows never runs. Add the label after the push, or remove and re-add it.
 
 Each app repo needs a `windows` label: `gh label create windows --color 0078D6 --description "Run the Windows CI checks on this PR"`.
 
