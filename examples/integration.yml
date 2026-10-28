@@ -1,0 +1,51 @@
+# Caller for the shared integration workflow. Copy to
+# `.github/workflows/integration.yml` in the app repo and keep ONE of the
+# `with:` / `secrets:` blocks below (or none, for the plain default).
+#
+# The tests themselves live in the repo's own justfile: define a
+# `test-integration` recipe (or set `recipe:`) that runs the ignored/opt-in
+# tests, scoped to the integration test binaries, e.g.
+#   test-integration:
+#       cargo test -p my-core --test my_integration -- --ignored
+#
+# Off the per-PR path on purpose: image pulls and real external services make
+# these slow and occasionally flaky. They run nightly and on demand.
+name: Integration tests
+
+on:
+  schedule:
+    - cron: "0 3 * * *" # 03:00 UTC daily
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  integration:
+    uses: RobbieMinderhoud/ci-workflows/.github/workflows/integration.yml@v1
+    # --- Default: runner ubuntu-latest, `just test-integration`, no extras.
+    #
+    # --- Database drivers or ssh servers via testcontainers (Docker is
+    # --- preinstalled on ubuntu runners; the recipe runs one test binary per
+    # --- driver with its feature flag). Install whatever the crates link
+    # --- against, e.g. libdbus for a keyring backend:
+    # with:
+    #   apt-packages: libdbus-1-dev pkg-config
+    #
+    # --- WSL: tests that need a real distro. Windows runner, a distro with
+    # --- the tools the tests call, and the distro name for the tests.
+    # --- The recipe should run the tests single-threaded if they start
+    # --- wsl.exe in bursts.
+    # with:
+    #   runner: windows-latest
+    #   setup-wsl: true
+    #   wsl-distro: Ubuntu-24.04
+    #   wsl-packages: git procps
+    #   env: |
+    #     MY_TEST_WSL_DISTRO=Ubuntu-24.04
+    #
+    # --- GitHub API: tests against the real API with a token. Store the
+    # --- token as a repository secret (a fine-grained PAT with the minimum
+    # --- scope, ideally on a dedicated test account or repo).
+    # secrets:
+    #   INTEGRATION_TOKEN: ${{ secrets.INTEGRATION_TOKEN }}
