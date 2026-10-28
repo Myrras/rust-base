@@ -4,15 +4,15 @@ Shared CI for Tauri 2 apps: reusable GitHub Actions workflows, a shared `common.
 
 ## Reusable workflows
 
-All are `on: workflow_call` only. Every workflow takes `ci-ref` (string, default `v1`): the ref of this repo from which shared files (`common.just`, `scripts/`) are fetched into `.ci/`. Secrets are passed explicitly; never use `secrets: inherit`.
+All are `on: workflow_call` only. Every workflow takes `ci-ref` (string, default `v1`): the ref of this repo from which shared files (`common.just`, `scripts/`) are fetched into `.ci/`. In `integration.yml` it is reserved (accepted for uniformity, no shared files are fetched). Secrets are passed explicitly; never use `secrets: inherit`.
 
 | Workflow | Inputs | Secrets | Notes |
 |---|---|---|---|
 | `tauri-ci.yml` | `rust-runner` (default `macos-latest`), `windows` (bool, default `true`), `windows-test-scope` (default `--workspace`), `extra-recipe` (default empty; runs `just <extra-recipe>` from the repo justfile after the rust recipe) | none | Jobs `frontend`, `rust`, `windows`, `ci-ok` (aggregate gate; a skipped windows job is fine). |
-| `release.yml` | `title-prefix` (default empty), `require-deploy-key` (bool, default `false`) | `RELEASE_DEPLOY_KEY` (optional) | Caller grants `contents: write, pull-requests: read, actions: write`. Dispatches the caller's `build.yml` with `--ref <tag>`. A missing deploy key only warns unless `require-deploy-key: true`. |
-| `pr-checks.yml` | none | none | Changelog entry gate and patch/minor/major label gate. |
-| `build.yml` | none | none | macOS + Windows matrix, installers (dmg, NSIS), uploads artifacts, attaches them to the GitHub Release on `refs/tags/v*`. |
-| `integration.yml` | `runner` (default `ubuntu-latest`), `apt-packages` (default empty), `setup-wsl` (bool, default `false`), `wsl-distro` (default `Ubuntu-24.04`), `recipe` (default `test-integration`, run from the repo justfile) | `INTEGRATION_TOKEN` (optional, exposed as env `INTEGRATION_TOKEN`) | Covers DB drivers, ssh, WSL and real-API tests. |
+| `release.yml` | `title-prefix` (default empty; joined with a space, so no trailing space), `require-deploy-key` (bool, default `false`) | `RELEASE_DEPLOY_KEY` (optional) | Caller grants `contents: write, pull-requests: read, actions: write`. Dispatches the caller's `build.yml` with `--ref <tag>`. A missing deploy key only warns unless `require-deploy-key: true`. |
+| `pr-checks.yml` | `ci-ref` only | none | Changelog entry gate and patch/minor/major label gate. |
+| `build.yml` | `ci-ref` only | none | macOS + Windows matrix, installers (dmg, NSIS), uploads artifacts, attaches them to the GitHub Release on `refs/tags/v*`. |
+| `integration.yml` | `runner` (default `ubuntu-latest`), `apt-packages` (default empty), `setup-wsl` (bool, default `false`), `wsl-distro` (default `Ubuntu-24.04`), `wsl-packages` (default empty; packages installed inside the WSL distro), `env` (default empty; extra `KEY=value` lines written to `GITHUB_ENV`, not for secrets), `recipe` (default `test-integration`, run from the repo justfile) | `INTEGRATION_TOKEN` (optional, exposed as env `INTEGRATION_TOKEN`) | Covers DB drivers, ssh, WSL and real-API tests. |
 
 ## common.just
 
