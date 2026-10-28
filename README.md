@@ -4,15 +4,15 @@ Shared CI for Tauri 2 apps: reusable GitHub Actions workflows, a shared `common.
 
 ## Reusable workflows
 
-All are `on: workflow_call` only. Every workflow takes `ci-ref` (string, default `v1`): the ref of this repo from which shared files (`common.just`, `scripts/`) are fetched into `.ci/`. In `integration.yml` it is reserved (accepted for uniformity, no shared files are fetched). Secrets are passed explicitly; never use `secrets: inherit`.
+All are `on: workflow_call` only. Every workflow takes `ci-ref` (string, default `v1`): the ref of this repo from which shared files (`common.just`, `scripts/`) are fetched into `$RUNNER_TEMP/ci`. The shared checkout is moved there right after checkout, so it is never inside the caller workspace. In `integration.yml` it is reserved (accepted for uniformity, no shared files are fetched). Secrets are passed explicitly; never use `secrets: inherit`.
 
-| Workflow | Inputs | Secrets | Notes |
-|---|---|---|---|
-| `tauri-ci.yml` | `rust-runner` (default `macos-latest`), `windows` (bool, default `true`), `windows-test-scope` (default `--workspace`), `extra-recipe` (default empty; runs `just <extra-recipe>` from the repo justfile after the rust recipe) | none | Jobs `frontend`, `rust`, `windows`, `ci-ok` (aggregate gate; a skipped windows job is fine). |
-| `release.yml` | `title-prefix` (default empty; joined with a space, so no trailing space), `require-deploy-key` (bool, default `false`) | `RELEASE_DEPLOY_KEY` (optional) | Caller grants `contents: write, pull-requests: read, actions: write`. Dispatches the caller's `build.yml` with `--ref <tag>`. A missing deploy key only warns unless `require-deploy-key: true`. |
-| `pr-checks.yml` | `ci-ref` only | none | Changelog entry gate and patch/minor/major label gate. |
-| `build.yml` | `ci-ref` only | none | macOS + Windows matrix, installers (dmg, NSIS), uploads artifacts, attaches them to the GitHub Release on `refs/tags/v*`. |
-| `integration.yml` | `runner` (default `ubuntu-latest`), `apt-packages` (default empty), `setup-wsl` (bool, default `false`), `wsl-distro` (default `Ubuntu-24.04`), `wsl-packages` (default empty; packages installed inside the WSL distro), `env` (default empty; extra `KEY=value` lines written to `GITHUB_ENV`, not for secrets), `recipe` (default `test-integration`, run from the repo justfile) | `INTEGRATION_TOKEN` (optional, exposed as env `INTEGRATION_TOKEN`) | Covers DB drivers, ssh, WSL and real-API tests. |
+| Workflow          | Inputs                                                                                                                                                                                                                                                                                                                                                                               | Secrets                                                            | Notes                                                                                                                                                                                            |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `tauri-ci.yml`    | `rust-runner` (default `macos-latest`), `windows` (bool, default `true`), `windows-test-scope` (default `--workspace`), `extra-recipe` (default empty; runs `just <extra-recipe>` from the repo justfile after the rust recipe)                                                                                                                                                      | none                                                               | Jobs `frontend`, `rust`, `windows`, `ci-ok` (aggregate gate; a skipped windows job is fine).                                                                                                     |
+| `release.yml`     | `title-prefix` (default empty; joined with a space, so no trailing space), `require-deploy-key` (bool, default `false`)                                                                                                                                                                                                                                                              | `RELEASE_DEPLOY_KEY` (optional)                                    | Caller grants `contents: write, pull-requests: read, actions: write`. Dispatches the caller's `build.yml` with `--ref <tag>`. A missing deploy key only warns unless `require-deploy-key: true`. |
+| `pr-checks.yml`   | `ci-ref` only                                                                                                                                                                                                                                                                                                                                                                        | none                                                               | Changelog entry gate and patch/minor/major label gate.                                                                                                                                           |
+| `build.yml`       | `ci-ref` only                                                                                                                                                                                                                                                                                                                                                                        | none                                                               | macOS + Windows matrix, installers (dmg, NSIS), uploads artifacts, attaches them to the GitHub Release on `refs/tags/v*`.                                                                        |
+| `integration.yml` | `runner` (default `ubuntu-latest`), `apt-packages` (default empty), `setup-wsl` (bool, default `false`), `wsl-distro` (default `Ubuntu-24.04`), `wsl-packages` (default empty; packages installed inside the WSL distro), `env` (default empty; extra `KEY=value` lines written to `GITHUB_ENV`, not for secrets), `recipe` (default `test-integration`, run from the repo justfile) | `INTEGRATION_TOKEN` (optional, exposed as env `INTEGRATION_TOKEN`) | Covers DB drivers, ssh, WSL and real-API tests.                                                                                                                                                  |
 
 ## common.just
 
@@ -23,13 +23,15 @@ Recipes:
 - `ci`: `rust`, then `frontend`
 - local only: `build-signed`, `sweep`, `_signed-conf`, `_target-dir`
 
-In CI the recipes run as `just -f .ci/common.just -d . <recipe>`. Locally, each repo justfile imports the file:
+In CI the recipes run as `just -f "$RUNNER_TEMP/ci/common.just" -d . <recipe>`. Locally, each repo justfile imports the file:
 
 ```just
 import? '~/.ci-workflows/common.just'
 ```
 
 A repo justfile keeps its own `test-integration` and extra recipes, and must not redefine the names above.
+
+In CI the `import?` resolves to nothing, because the path under `~` does not exist on the runner. Caller recipes that CI runs (`test-integration`, `extra-recipe`) must therefore not depend on recipes from `common.just`.
 
 ## Caller setup
 
@@ -40,10 +42,17 @@ Copy the matching file into the repo's `.github/workflows/` and adjust the input
 - [`examples/build.yml`](examples/build.yml): `workflow_dispatch`, calls `build.yml`
 - [`examples/integration.yml`](examples/integration.yml): nightly cron + dispatch, calls `integration.yml`
 
+## Caller requirements
+
+- **pnpm:** `pnpm/action-setup` is given `version: 10`. Do not add a `packageManager` field to `package.json` that conflicts with it, or the setup fails with "Multiple versions of pnpm specified".
+- **`ci-ref`:** defaults to `v1`. To test a branch of this repo, change both the `@ref` in `uses:` and `ci-ref` to that branch.
+- **Changelog:** `CHANGELOG.md` must have a `## [Unreleased]` heading; a release without it fails.
+- **Release bump:** the highest of patch, minor and major across all PRs since the last tag.
+
 ## Versioning
 
 Callers pin `@v1`. The `v1` tag is moved to the latest compatible release. Breaking changes ship as `v2`.
 
 ## Self-CI
 
-`.github/workflows/self-ci.yml` runs actionlint, shellcheck, script tests and `just --fmt --check` on this repo.
+`.github/workflows/self-ci.yml` runs actionlint (workflows and `examples/*.yml`), shellcheck, script tests, `just --fmt --check` and a prettier check of the whole repo.

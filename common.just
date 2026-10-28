@@ -1,5 +1,5 @@
 # Shared recipes for the Tauri apps. Run from CI as
-# `just -f .ci/common.just -d . <recipe>`; import locally from a repo justfile
+# `just -f "$RUNNER_TEMP/ci/common.just" -d . <recipe>`; import locally from a repo justfile
 # with `import? '~/.ci-workflows/common.just'`.
 # A repo justfile must not define recipes with the names below.
 
@@ -26,19 +26,21 @@ frontend:
 # The full pipeline: rust, then frontend.
 ci: rust frontend
 
-# Build a SIGNED release .app for personal install (macOS), and show it in
-# Finder. Reuses the stable signing identity in tauri.dev-signed.conf.json
+# Reuses the stable signing identity in tauri.dev-signed.conf.json
 # (that file only sets bundle.macOS.signingIdentity, so it's equally valid for
 # release). A stable identity means macOS privacy grants persist and the app
 # launches with no Gatekeeper prompt on this machine. Output:
 # <target dir>/release/bundle/macos/<App>.app.
-# Build a signed release .app for personal install (macOS).
+
+# Build a signed release .app for personal install (macOS) and show it in Finder.
 build-signed: _build-signed
     open "$(just -f '{{ justfile() }}' -d . _target-dir)/release/bundle/macos"
 
-# Reclaim stale build artifacts (old dependency versions + other toolchains)
-# WITHOUT touching the current build, so `target/` stops growing without bound.
+# Removes old dependency versions and other toolchains' artifacts WITHOUT
+# touching the current build, so `target/` stops growing without bound.
 # No-op with a hint if cargo-sweep isn't installed (`cargo install cargo-sweep`).
+
+# Reclaim stale build artifacts in target/ (needs cargo-sweep).
 sweep:
     @command -v cargo-sweep >/dev/null 2>&1 \
         && cargo sweep --installed >/dev/null && cargo sweep --time 7 >/dev/null \
