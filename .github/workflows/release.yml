@@ -3,7 +3,7 @@
 # `Release vX.Y.Z [skip ci]` to main, tags it, creates the GitHub Release and
 # dispatches the caller's build.yml, which attaches the installers.
 # pr-checks.yml makes every PR add that entry and carry exactly one release
-# label (patch, minor or major).
+# label (release:patch, release:minor or release:major).
 #
 # One release can cover several merged PRs: GitHub cancels a pending run on
 # main when a newer one queues, even with cancel-in-progress: false. The bump is
@@ -131,7 +131,7 @@ jobs:
           echo "tag=$prev" >> "$GITHUB_OUTPUT"
 
       # Label aggregation. One release can cover several merged PRs (see
-      # the header), so the bump is the highest of major > minor > patch over
+      # the header), so the bump is the highest of release:major > release:minor > release:patch over
       # the labels of every PR merged since PREV: one lookup per first-parent
       # commit on main, skipping earlier `Release v*` commits. No PREV: all
       # first-parent commits. A commit without a PR (direct push) adds no label.
@@ -157,8 +157,8 @@ jobs:
             labels="$labels,$pr_labels"
           done
           case "$labels," in
-            *,major,*) bump="major" ;;
-            *,minor,*) bump="minor" ;;
+            *,release:major,*) bump="major" ;;
+            *,release:minor,*) bump="minor" ;;
             *) bump="patch" ;;
           esac
           echo "bump: $bump"
@@ -173,7 +173,7 @@ jobs:
           BUMP: ${{ steps.bump.outputs.bump }}
         run: |
           if [ -n "$PREV" ]; then
-            tag=$(bash "$RUNNER_TEMP/ci/scripts/next-version.sh" "$PREV" "$BUMP")
+            tag=$(bash "$RUNNER_TEMP/ci/scripts/next-version.sh" "$PREV" "release:$BUMP")
             echo "$PREV → $tag ($BUMP)"
           else
             tag="v$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"

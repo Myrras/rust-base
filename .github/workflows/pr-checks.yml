@@ -2,7 +2,7 @@
 # - changelog: the PR adds an entry under `## [Unreleased]` in CHANGELOG.md
 #   (merging to main releases it). Skipped for Dependabot PRs and PRs labelled
 #   `no-release`.
-# - release-label: the PR carries exactly one of `patch`, `minor`, `major` or
+# - release-label: the PR carries exactly one of `release:patch`, `release:minor`, `release:major` or
 #   `no-release`; the first three decide the version bump on merge
 #   (scripts/next-version.sh), `no-release` marks a CI/config/docs-only PR.
 #
@@ -76,8 +76,8 @@ jobs:
         env:
           LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: |
-          count=$(jq '[.[] | select(. == "patch" or . == "minor" or . == "major" or . == "no-release")] | length' <<< "$LABELS")
+          count=$(jq '[.[] | select(. == "release:patch" or . == "release:minor" or . == "release:major" or . == "no-release")] | length' <<< "$LABELS")
           if [ "$count" -ne 1 ]; then
-            echo "::error::Add exactly one release label to this PR: patch, minor, major, or no-release for CI/config/docs-only changes that shouldn't release (found $count)."
+            echo "::error::Add exactly one release label to this PR: release:patch, release:minor, release:major, or no-release for CI/config/docs-only changes that shouldn't release (found $count)."
             exit 1
           fi

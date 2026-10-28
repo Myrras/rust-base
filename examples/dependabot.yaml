@@ -1,4 +1,4 @@
-# Copy to .github/dependabot.yml. The `patch` label satisfies the release-label
+# Copy to .github/dependabot.yml. The `release:patch` label satisfies the release-label
 # gate in pr-checks.yml; the changelog gate is skipped for Dependabot PRs.
 # (.yaml, not .yml: self-ci runs actionlint on examples/*.yml, workflows only.)
 version: 2
@@ -7,7 +7,7 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    labels: ["patch", "dependencies"]
+    labels: ["release:patch", "dependencies"]
     groups:
       actions:
         patterns: ["*"]
@@ -16,7 +16,7 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    labels: ["patch", "dependencies"]
+    labels: ["release:patch", "dependencies"]
     groups:
       cargo:
         patterns: ["*"]
@@ -25,7 +25,7 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    labels: ["patch", "dependencies"]
+    labels: ["release:patch", "dependencies"]
     groups:
       npm:
         patterns: ["*"]
