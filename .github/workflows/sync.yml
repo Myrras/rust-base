@@ -1,0 +1,123 @@
+# Pushes the shared payload in sync/ to the apps listed in sync/apps.txt: one
+# pull request per app on the branch rust-base/sync. The PAT in SYNC_TOKEN does
+# all the writing; the workflow token itself is read-only. Commits made here
+# are not signed, which the apps' rulesets do not require.
+name: Sync apps
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "sync/**"
+      - "ci/scripts/sync-apply.sh"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync
+  cancel-in-progress: false
+
+jobs:
+  matrix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      apps: ${{ steps.apps.outputs.apps }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: sync/apps.txt
+          sparse-checkout-cone-mode: false
+
+      - name: Build matrix from sync/apps.txt
+        id: apps
+        shell: bash
+        run: |
+          apps=$(grep -v -e '^[[:space:]]*#' -e '^[[:space:]]*$' sync/apps.txt | jq -R . | jq -sc .)
+          echo "apps=$apps" >> "$GITHUB_OUTPUT"
+
+  sync:
+    needs: matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJSON(needs.matrix.outputs.apps) }}
+    env:
+      SYNC_TOKEN: ${{ secrets.SYNC_TOKEN }}
+      GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
+      APP: ${{ matrix.app }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Require SYNC_TOKEN
+        run: |
+          if [ -z "$SYNC_TOKEN" ]; then
+            echo "::error::Secret SYNC_TOKEN is not set. Add a fine-grained PAT with contents and pull-requests write on the apps."
+            exit 1
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: rust-base
+          persist-credentials: false
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ matrix.app }}
+          token: ${{ secrets.SYNC_TOKEN }}
+          path: app
+          persist-credentials: false
+
+      - name: Apply shared files
+        run: rust-base/ci/scripts/sync-apply.sh rust-base app
+
+      - name: Open or update the sync PR
+        env:
+          BRANCH: rust-base/sync
+          TITLE: Sync shared files from rust-base
+          SHA: ${{ github.sha }}
+          SERVER: ${{ github.server_url }}
+          SOURCE_REPO: ${{ github.repository }}
+        working-directory: app
+        run: |
+          git add -A
+          if git diff --cached --quiet; then
+            echo "$APP is up to date, nothing to do."
+            exit 0
+          fi
+
+          {
+            echo "Synced from [$SOURCE_REPO@${SHA:0:7}]($SERVER/$SOURCE_REPO/commit/$SHA)."
+            echo
+            echo "Changed files:"
+            echo
+            git diff --cached --name-status | while IFS=$'\t' read -r status path; do
+              echo "- \`$path\` ($status)"
+            done
+            echo
+            echo "Do not edit synced files in this repo; change them in rust-base."
+          } > "$RUNNER_TEMP/pr-body.md"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$BRANCH"
+          git commit -q -m "$TITLE" -m "Source: $SERVER/$SOURCE_REPO/commit/$SHA"
+
+          auth=$(printf 'x-access-token:%s' "$SYNC_TOKEN" | base64 -w0)
+          echo "::add-mask::$auth"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" \
+            push --force origin "$BRANCH"
+
+          number=$(gh pr list --repo "$APP" --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$number" ]; then
+            gh pr edit "$number" --repo "$APP" --title "$TITLE" --body-file "$RUNNER_TEMP/pr-body.md" --add-label no-release
+            echo "Updated $APP#$number"
+          else
+            gh pr create --repo "$APP" --head "$BRANCH" --title "$TITLE" --body-file "$RUNNER_TEMP/pr-body.md" --label no-release
+          fi
