@@ -1,35 +1,28 @@
-# Copy to .github/dependabot.yml. The `release:patch` label satisfies the release-label
-# gate in pr-checks.yml; the changelog gate is skipped for Dependabot PRs.
-# (.yaml, not .yml: self-ci runs actionlint on examples/*.yml, workflows only.)
+# Majors are ignored here and handled deliberately via rust-base.
+# rust-base's own Dependabot (weekly, majors visible) is the canary.
 version: 2
 updates:
-  - package-ecosystem: github-actions
-    directory: /
-    schedule:
-      interval: weekly
-    labels: ["release:patch", "dependencies"]
-    groups:
-      actions:
-        patterns: ["*"]
-
   - package-ecosystem: cargo
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
     labels: ["release:patch", "dependencies"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       cargo:
         patterns: ["*"]
-
+        update-types: ["minor", "patch"]
   - package-ecosystem: npm
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
     labels: ["release:patch", "dependencies"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       npm:
         patterns: ["*"]
-    # typescript-eslint doesn't support TypeScript 7 yet; remove when it does.
-    ignore:
-      - dependency-name: "typescript"
-        update-types: ["version-update:semver-major"]
+        update-types: ["minor", "patch"]
