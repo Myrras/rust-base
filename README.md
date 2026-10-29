@@ -2,7 +2,7 @@
 
 The base for cross-platform desktop apps in **Rust + Tauri 2 + React + TypeScript + Vite**. One repo, two roles:
 
-- **[Shared CI](#shared-ci):** reusable GitHub Actions workflows (`.github/workflows/reusable-*.yml`), shared `just` recipes (`ci/common.just`) and release scripts (`ci/scripts/`). Apps keep thin caller workflows and pin this repo at `@v1`.
+- **[Shared CI](#shared-ci):** reusable GitHub Actions workflows (`.github/workflows/reusable-*.yml`), shared `just` recipes (`ci/common.just`) and release scripts (`ci/scripts/`). Apps keep thin caller workflows and pin this repo at `@v2`.
 - **[Template app](#template-app):** the repo root is a working Tauri app with the shared skeleton and conventions, and one tiny sample feature (greet + notes) wired end to end so `just dev` and `just ci` work out of the box. New apps [start from this template](#start-a-new-app-from-this-template).
 
 Every PR here runs the shared CI on the template app: this repo's own callers use the local reusable workflows and the PR's own `ci/` files. See `CLAUDE.md` for the conventions.
@@ -11,7 +11,7 @@ Every PR here runs the shared CI on the template app: this repo's own callers us
 
 ### Reusable workflows
 
-All are `on: workflow_call` only. Every workflow takes `ci-repo` (string, default `RobbieMinderhoud/rust-base`) and `ci-ref` (string, default `v1`): the repo and ref from which the shared files (`ci/common.just`, `ci/scripts/`) are fetched into `$RUNNER_TEMP/rust-base`. The shared checkout is moved there right after checkout, so it is never inside the caller workspace. In `reusable-integration.yml` both are reserved (accepted for uniformity, no shared files are fetched). Secrets are passed explicitly; never use `secrets: inherit`.
+All are `on: workflow_call` only. Every workflow takes `ci-repo` (string, default `RobbieMinderhoud/rust-base`) and `ci-ref` (string, default `v2`): the repo and ref from which the shared files (`ci/common.just`, `ci/scripts/`) are fetched into `$RUNNER_TEMP/rust-base`. The shared checkout is moved there right after checkout, so it is never inside the caller workspace. In `reusable-integration.yml` both are reserved (accepted for uniformity, no shared files are fetched). Secrets are passed explicitly; never use `secrets: inherit`.
 
 | Workflow                   | Inputs                                                                                                                                                                                                                                                                                                                                                                               | Secrets                                                            | Notes                                                                                                                                                                                            |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -65,7 +65,7 @@ Every app runs the same four callers, kept in [`sync/files/.github/workflows/`](
 
 Rules:
 
-- **Identical callers.** The synced callers pin `@v1`, pass no `with:` and always pass the secrets `RELEASE_DEPLOY_KEY` and `INTEGRATION_TOKEN` explicitly (an unset secret is an empty string). Don't edit them in an app: the next sync overwrites them. Change them here, in `sync/files/`.
+- **Identical callers.** The synced callers pin `@v2`, pass no `with:` and always pass the secrets `RELEASE_DEPLOY_KEY` and `INTEGRATION_TOKEN` explicitly (an unset secret is an empty string). Don't edit them in an app: the next sync overwrites them. Change them here, in `sync/files/`.
 - **Apps own `.github/rust-base.json`.** Whatever differs per app goes in that file. It is not synced; each app keeps its own.
 
 [`examples/`](examples/) shows the same callers with the optional `with:` inputs, for repos outside the sync.
@@ -167,7 +167,7 @@ Don't require `ci / frontend`, `ci / rust` or `ci / windows`: `ci-ok` aggregates
 ### Caller requirements
 
 - **pnpm:** `pnpm/action-setup` is given `version: 10`. Do not add a `packageManager` field to `package.json` that conflicts with it, or the setup fails with "Multiple versions of pnpm specified".
-- **`ci-repo` / `ci-ref`:** default to `RobbieMinderhoud/rust-base` and `v1`. To test a branch of this repo from an app, change both the `@ref` in `uses:` and `ci-ref` to that branch.
+- **`ci-repo` / `ci-ref`:** default to `RobbieMinderhoud/rust-base` and `v2`. To test a branch of this repo from an app, change both the `@ref` in `uses:` and `ci-ref` to that branch.
 - **Changelog:** `CHANGELOG.md` must have a `## [Unreleased]` heading; a release without it fails.
 - **Release bump:** the highest of release:patch, release:minor and release:major across all PRs since the last tag.
 - **Labels:** `release:patch`, `release:minor`, `release:major`, `no-release` and `windows` must exist in the repo. Only the `release:` names count as bumps: Dependabot applies bare `major`/`minor`/`patch` labels itself when they exist, and those are ignored.
@@ -175,7 +175,7 @@ Don't require `ci / frontend`, `ci / rust` or `ci / windows`: `ci-ok` aggregates
 
 ### Versioning
 
-Apps pin `@v1`. The `v1` tag is moved to the latest compatible commit. Breaking changes ship as `v2`.
+Apps pin `@v2`. The `v2` tag is moved to the latest compatible commit. Breaking changes ship as `v3`. `v1` is the old ci-workflows layout (`tauri-ci.yml`) and is frozen.
 
 ### Syncing shared files to the apps
 
@@ -234,7 +234,7 @@ just build          # shared recipe: production desktop bundle
 2. Clone rust-base once and link it, so the app's justfile finds the shared recipes: `ln -s /path/to/rust-base ~/.rust-base`.
 3. In the new repo:
    - Replace `import 'ci/common.just'` in the `justfile` with `import? '~/.rust-base/ci/common.just'`, and delete `ci/`, `examples/` and the `reusable-*.yml` and `self-ci.yml` workflows.
-   - Replace the callers in `.github/workflows/` with the synced ones from [`sync/files/.github/workflows/`](sync/files/.github/workflows/) (they pin `@v1` and add the release job), and put the app's settings in `.github/rust-base.json` (see [Per-app config](#per-app-config-githubrust-basejson)).
+   - Replace the callers in `.github/workflows/` with the synced ones from [`sync/files/.github/workflows/`](sync/files/.github/workflows/) (they pin `@v2` and add the release job), and put the app's settings in `.github/rust-base.json` (see [Per-app config](#per-app-config-githubrust-basejson)).
    - Replace `README.md` and the shared-CI parts of `CLAUDE.md` with your app's own.
 4. Rename the crates (`app-core`, `app`), the product name / bundle identifier in `src-tauri/tauri.conf.json` (`com.example.app`), and the package names in `Cargo.toml` / `package.json`.
 5. Replace the placeholder icons in `src-tauri/icons/` with your own: `pnpm tauri icon path/to/icon.png`.

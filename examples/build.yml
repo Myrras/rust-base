@@ -12,4 +12,4 @@ permissions:
 
 jobs:
   build:
-    uses: RobbieMinderhoud/rust-base/.github/workflows/reusable-build.yml@v1
+    uses: RobbieMinderhoud/rust-base/.github/workflows/reusable-build.yml@v2
