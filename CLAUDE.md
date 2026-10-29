@@ -14,7 +14,7 @@ rust-base is two things in one repo:
   checkout.
 - **The shared CI** for every app built from it: the reusable workflows
   `.github/workflows/reusable-*.yml`, the shared recipes `ci/common.just` and
-  the release scripts `ci/scripts/`. Apps call them pinned at `@v1`.
+  the release scripts `ci/scripts/`. Apps call them pinned at `@v2`.
 
 New apps are **created from this template**. It is the source of truth for the
 shared skeleton; derived apps (e.g. Selene, Podium) carry their own domain on
@@ -126,7 +126,7 @@ CI is a set of thin callers in `.github/workflows/`: `ci.yml` (checks; in an app
 also the release on push to `main`), `pr-checks.yml` (changelog entry + release
 label), `build.yml` (installers, dispatched by the release) and
 `integration.yml` (nightly `just test-integration`). In an app they call
-`RobbieMinderhoud/rust-base/.github/workflows/reusable-*.yml@v1`. In rust-base
+`RobbieMinderhoud/rust-base/.github/workflows/reusable-*.yml@v2`. In rust-base
 they call the local `./.github/workflows/reusable-*.yml` with
 `ci-repo: ${{ github.repository }}` and the PR's head commit as `ci-ref`, so
 every PR here self-tests the shared CI on the template app. rust-base's `ci.yml`
@@ -195,7 +195,7 @@ code and no NSIS-specific config yet.
   builds the macOS `.dmg` and Windows NSIS installers and attaches them.
   `build.yml` must keep that name; a hand-pushed tag builds with
   `gh workflow run build.yml --ref vX.Y.Z`.
-- **App callers pin `@v1`.** Don't add a `packageManager` field to `package.json`
+- **App callers pin `@v2`.** Don't add a `packageManager` field to `package.json`
   (the shared workflows set pnpm 10; a second version fails setup). Recipes CI
   calls (`test-integration`) must not depend on `common.just` recipes: in an
   app's CI the optional import resolves to nothing.
@@ -228,9 +228,9 @@ reference (inputs, secrets, labels, required checks) is in `README.md`.
 
 - **Interface:** the reusable workflows' inputs and secrets, the check names
   (`ci / ci-ok`, `pr-checks / Changelog entry`, `pr-checks / Release label`)
-  and the `ci/common.just` recipe names. Apps pin `@v1`, which is moved to the
-  latest compatible commit; a breaking change ships as `v2`. Never create or
-  move a tag (including `v1`) without the owner's explicit OK.
+  and the `ci/common.just` recipe names. Apps pin `@v2`, which is moved to the
+  latest compatible commit; a breaking change ships as `v3`. `v1` is the old ci-workflows layout and is frozen. Never create or
+  move a tag (including `v2`) without the owner's explicit OK.
 - **Naming:** reusable workflows are `on: workflow_call` only and named
   `reusable-*.yml`. The standard names (`ci.yml`, `pr-checks.yml`, `build.yml`,
   `integration.yml`) are this repo's own callers: keep them like the app

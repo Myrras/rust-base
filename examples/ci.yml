@@ -31,18 +31,18 @@ jobs:
     # Keep this condition: it is what stops an unrelated label from producing
     # a skipped (= passing) `ci / ci-ok` check.
     if: github.event.action != 'labeled' || github.event.label.name == 'windows'
-    uses: RobbieMinderhoud/rust-base/.github/workflows/reusable-tauri-ci.yml@v1
+    uses: RobbieMinderhoud/rust-base/.github/workflows/reusable-tauri-ci.yml@v2
     # with:
     #   rust-runner: ubuntu-latest
     #   windows: auto                    # auto | always | never
     #   windows-test-scope: -p my-core   # default: --workspace
     #   extra-recipe: ''                 # recipe from this repo's justfile
-    #   ci-ref: v1
+    #   ci-ref: v2
 
   release:
     needs: ci
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    uses: RobbieMinderhoud/rust-base/.github/workflows/reusable-release.yml@v1
+    uses: RobbieMinderhoud/rust-base/.github/workflows/reusable-release.yml@v2
     permissions:
       contents: write
       pull-requests: read
@@ -50,6 +50,6 @@ jobs:
     # with:
     #   title-prefix: MyApp   # no trailing space; title becomes "MyApp v1.2.3"
     #   require-deploy-key: false
-    #   ci-ref: v1
+    #   ci-ref: v2
     secrets:
       RELEASE_DEPLOY_KEY: ${{ secrets.RELEASE_DEPLOY_KEY }}

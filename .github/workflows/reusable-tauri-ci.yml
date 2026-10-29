@@ -23,7 +23,7 @@ on:
       ci-ref:
         description: Ref of `ci-repo` to fetch `ci/common.just` from.
         type: string
-        default: v1
+        default: v2
       ci-repo:
         description: Repository holding the shared files (`ci/common.just`, `ci/scripts/`).
         type: string

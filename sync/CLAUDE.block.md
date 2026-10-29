@@ -3,7 +3,7 @@
 CI, release and installer builds come from
 <https://github.com/RobbieMinderhoud/rust-base>. `.github/workflows/` holds thin
 callers (`ci.yml`, `pr-checks.yml`, `build.yml`, `integration.yml`) of its
-reusable workflows, pinned `@v1`. The callers and the shared config files
+reusable workflows, pinned `@v2`. The callers and the shared config files
 (`.gitattributes`, `.editorconfig`, `rust-toolchain.toml`, `.prettierrc.json`,
 `.prettierignore`, `eslint.config.js`, `tsconfig*.json`,
 `.github/dependabot.yml`) are synced from rust-base: **change them there**,
