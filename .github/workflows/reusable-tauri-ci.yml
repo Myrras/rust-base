@@ -3,10 +3,11 @@
 # the required check.
 #
 # The defaults keep billed minutes low (Linux 1x, Windows 2x, macOS 10x):
-# - Windows (`windows: auto`) runs on every event except pull requests; on a
-#   pull request only when it carries the `windows` label. A push to main always
-#   runs it, so it still gates the release. The caller re-runs CI when the label
-#   is added (`labeled` in examples/ci.yml).
+# - Windows (`windows: auto`) runs on every event except pull requests. A push
+#   to main always runs it, so it still gates the release. This workflow reads
+#   no labels: Windows on a pull request comes from a second caller,
+#   ci-windows.yml, which runs it with `only: windows` while the PR carries the
+#   `windows` label (see examples/ci-windows.yml).
 # - The Rust cache is saved only from main; PR runs restore it.
 #
 # The check recipes live in ci/common.just, fetched from `ci-repo` at `ci-ref`
@@ -38,10 +39,16 @@ on:
       windows:
         description: >-
           When to run the Rust checks on windows-latest: `auto` (every event
-          except pull requests; pull requests only with the `windows` label),
-          `always` or `never`.
+          except pull requests), `always` or `never`. Ignored with `only: windows`.
         type: string
         default: auto
+      only:
+        description: >-
+          Empty: all jobs. `windows`: only the Windows job (and the config job
+          it needs), whatever `windows` says; no frontend, rust or ci-ok. For
+          the ci-windows.yml caller, whose checks are not required.
+        type: string
+        default: ""
       windows-test-scope:
         description: >-
           Arguments for `cargo test` on Windows (e.g. `-p my-core`). Empty:
@@ -78,6 +85,28 @@ jobs:
       windows-test-scope: ${{ steps.resolve.outputs.windows-test-scope }}
       extra-recipe: ${{ steps.resolve.outputs.extra-recipe }}
     steps:
+      # Here and not in ci-ok, which `only: windows` skips. A failed config job
+      # skips rust and windows, and fails ci-ok.
+      - name: Check inputs
+        env:
+          WINDOWS: ${{ inputs.windows }}
+          ONLY: ${{ inputs.only }}
+        run: |
+          case "$WINDOWS" in
+            auto | always | never) ;;
+            *)
+              echo "::error::Input windows must be auto, always or never (got '$WINDOWS')."
+              exit 1
+              ;;
+          esac
+          case "$ONLY" in
+            "" | windows) ;;
+            *)
+              echo "::error::Input only must be empty or windows (got '$ONLY')."
+              exit 1
+              ;;
+          esac
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -151,6 +180,7 @@ jobs:
           done < <(jq -r '.values | keys[]' <<< "$result")
 
   frontend:
+    if: inputs.only == ''
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -188,6 +218,7 @@ jobs:
 
   rust:
     needs: config
+    if: inputs.only == ''
     runs-on: ${{ needs.config.outputs.rust-runner }}
     timeout-minutes: 45
     steps:
@@ -253,10 +284,10 @@ jobs:
   windows:
     needs: config
     if: >-
-      inputs.windows == 'always'
-      || (inputs.windows == 'auto'
-          && (github.event_name != 'pull_request'
-              || contains(github.event.pull_request.labels.*.name, 'windows')))
+      inputs.only == 'windows'
+      || (inputs.only == ''
+          && (inputs.windows == 'always'
+              || (inputs.windows == 'auto' && github.event_name != 'pull_request')))
     runs-on: windows-latest
     timeout-minutes: 45
     env:
@@ -296,26 +327,18 @@ jobs:
         run: just -f "$RUNNER_TEMP/rust-base/ci/common.just" -d . rust
 
   ci-ok:
-    if: always()
+    if: always() && inputs.only == ''
     needs: [config, frontend, rust, windows]
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      # A skipped windows job (no `windows` label, or `windows: never`) is
-      # fine; failure or cancel is not (a failed config job skips rust and
-      # windows, and fails here).
+      # A skipped windows job (a pull request, or `windows: never`) is fine;
+      # failure or cancel is not (a failed config job skips rust and windows,
+      # and fails here).
       - name: Check results
         env:
           RESULTS: ${{ join(needs.*.result, ' ') }}
-          WINDOWS: ${{ inputs.windows }}
         run: |
-          case "$WINDOWS" in
-            auto | always | never) ;;
-            *)
-              echo "::error::Input windows must be auto, always or never (got '$WINDOWS')."
-              exit 1
-              ;;
-          esac
           echo "needed job results: $RESULTS"
           case " $RESULTS " in
             *" failure "* | *" cancelled "*) exit 1 ;;

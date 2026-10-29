@@ -16,7 +16,7 @@ All are `on: workflow_call` only. Every workflow takes `ci-repo` (string, defaul
 
 | Workflow                   | Inputs                                                                                                                                                                                                                                                                                                                                                                               | Secrets                                                            | Notes                                                                                                                                                                                            |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `reusable-tauri-ci.yml`    | `rust-runner` (default `ubuntu-latest`; on Linux the Tauri apt packages are installed first), `windows` (string, default `auto`; `auto`, `always` or `never`, see [Windows checks](#windows-checks-and-the-windows-label)), `windows-test-scope` (default `--workspace`), `extra-recipe` (default empty; runs `just <extra-recipe>` from the repo justfile after the rust recipe)    | none                                                               | Jobs `frontend`, `rust`, `windows`, `ci-ok` (aggregate gate; a skipped windows job is fine). The Rust cache is saved only on `main`.                                                             |
+| `reusable-tauri-ci.yml`    | `rust-runner` (default `ubuntu-latest`; on Linux the Tauri apt packages are installed first), `windows` (string, default `auto`; `auto`, `always` or `never`, see [Windows checks](#windows-checks-and-the-windows-label)), `only` (string, default empty = all jobs; `windows` runs only the Windows job, for `ci-windows.yml`), `windows-test-scope` (default `--workspace`), `extra-recipe` (default empty; runs `just <extra-recipe>` from the repo justfile after the rust recipe)    | none                                                               | Jobs `frontend`, `rust`, `windows`, `ci-ok` (aggregate gate; a skipped windows job is fine). The Rust cache is saved only on `main`. Reads no labels.                                            |
 | `reusable-release.yml`     | `title-prefix` (default empty; joined with a space, so no trailing space), `require-deploy-key` (bool, default `false`)                                                                                                                                                                                                                                                              | `RELEASE_DEPLOY_KEY` (optional)                                    | Caller grants `contents: write, pull-requests: read, actions: write`. Dispatches the caller's `build.yml` with `--ref <tag>`. A missing deploy key only warns unless `require-deploy-key: true`. |
 | `reusable-pr-checks.yml`   | `ci-repo` and `ci-ref` only                                                                                                                                                                                                                                                                                                                                                          | none                                                               | Changelog entry gate and release:patch/minor/major/no-release label gate. Reads the PR's current labels via the API; the caller grants `pull-requests: read`.                                                                                                                        |
 | `reusable-build.yml`       | `ci-repo` and `ci-ref` only                                                                                                                                                                                                                                                                                                                                                          | none                                                               | macOS + Windows matrix, installers (dmg, NSIS), uploads artifacts, attaches them to the GitHub Release on `refs/tags/v*`.                                                                        |
@@ -24,7 +24,7 @@ All are `on: workflow_call` only. Every workflow takes `ci-repo` (string, defaul
 
 The per-app inputs of `reusable-tauri-ci.yml`, `reusable-release.yml` and `reusable-integration.yml` default to empty (`false` for booleans) and fall back to the app's [`.github/rust-base.json`](#per-app-config-githubrust-basejson), then to the defaults above. A non-empty input still wins; a boolean input wins only when `true`. The `windows` input stays an input only.
 
-The standard names (`ci.yml`, `pr-checks.yml`, `build.yml`, `integration.yml`) in `.github/workflows/` are this repo's own callers. They call the local reusable workflows with `ci-repo: ${{ github.repository }}` and `ci-ref` set to the PR's head commit, so a PR tests its own changes. `ci.yml` has no release job: the template app is never released. `build.yml` is `workflow_dispatch` only, to test the build workflow by hand.
+The standard names (`ci.yml`, `ci-windows.yml`, `pr-checks.yml`, `build.yml`, `integration.yml`) in `.github/workflows/` are this repo's own callers. They call the local reusable workflows with `ci-repo: ${{ github.repository }}` and `ci-ref` set to the PR's head commit, so a PR tests its own changes. `ci.yml` has no release job: the template app is never released. `build.yml` is `workflow_dispatch` only, to test the build workflow by hand.
 
 ### ci/common.just
 
@@ -57,16 +57,17 @@ In an app's CI the `import?` resolves to nothing, because the path under `~` doe
 
 ### Caller setup
 
-Every app runs the same four callers, kept in [`sync/files/.github/workflows/`](sync/files/.github/workflows/) and copied verbatim into each app:
+Every app runs the same five callers, kept in [`sync/files/.github/workflows/`](sync/files/.github/workflows/) and copied verbatim into each app:
 
-- `ci.yml`: push to `main` + pull requests; calls the CI workflow, then the release workflow on push to `main`
+- `ci.yml`: push to `main` + pull requests (no label events); calls the CI workflow, then the release workflow on push to `main`
+- `ci-windows.yml`: pull requests with the `windows` label; calls the CI workflow with `only: windows`
 - `pr-checks.yml`: calls the PR checks workflow
 - `build.yml`: `workflow_dispatch`, calls the build workflow
 - `integration.yml`: nightly cron + dispatch, calls the integration workflow
 
 Rules:
 
-- **Identical callers.** The synced callers pin `@v2`, pass no `with:` and always pass the secrets `RELEASE_DEPLOY_KEY` and `INTEGRATION_TOKEN` explicitly (an unset secret is an empty string). Don't edit them in an app: the next sync overwrites them. Change them here, in `sync/files/`.
+- **Identical callers.** The synced callers pin `@v2`, pass no `with:` (except the fixed `only: windows` in `ci-windows.yml`) and always pass the secrets `RELEASE_DEPLOY_KEY` and `INTEGRATION_TOKEN` explicitly (an unset secret is an empty string). Don't edit them in an app: the next sync overwrites them. Change them here, in `sync/files/`.
 - **Apps own `.github/rust-base.json`.** Whatever differs per app goes in that file. It is not synced; each app keeps its own.
 
 [`examples/`](examples/) shows the same callers with the optional `with:` inputs, for repos outside the sync.
@@ -112,18 +113,22 @@ The apps' config (`sync/files/.github/dependabot.yml`) is calm: cargo and npm on
 
 Billed minutes count Linux 1×, Windows 2× and macOS 10×, so by default only `main` pays for Windows:
 
-| Event                         | `windows: auto` (default)                       |
-| ----------------------------- | ----------------------------------------------- |
-| push to `main`                | runs; gates `release` (`needs: ci`)             |
-| pull request                  | runs only if the PR has the `windows` label     |
-| `windows` label added to a PR | an extra CI run for the PR, now with Windows    |
-| any other label added to a PR | nothing runs (the caller's `ci` job is skipped) |
+| Event                                    | `ci.yml` (`windows: auto`)          | `ci-windows.yml`                            |
+| ---------------------------------------- | ----------------------------------- | ------------------------------------------- |
+| push to `main`                           | frontend, Rust, Windows; gates `release` (`needs: ci`) | doesn't run                  |
+| new commit on a PR                       | frontend, Rust; reports `ci / ci-ok` | Windows if the PR has the `windows` label   |
+| `windows` label added to a PR            | doesn't run                         | Windows                                     |
+| any other label added, any label removed | doesn't run                         | nothing (skipped without a runner)          |
 
-`windows: always` runs it on every event, `windows: never` never.
+`windows: always` runs Windows in `ci.yml` on every event, `windows: never` never; neither changes `ci-windows.yml`.
 
-The label trigger lives in the caller (see [`examples/ci.yml`](examples/ci.yml)): `labeled` in `pull_request.types`, a concurrency group of its own for every label run, and an `if:` on the `ci` job. Keep all three. Without the `if:`, a `release:patch` label would re-run CI; if the skip were inside `reusable-tauri-ci.yml` instead, the skipped `ci / ci-ok` would count as passing and replace a real result. A skipped caller job reports only as `ci`, so `ci / ci-ok` stays the result of the last real run. Adding `windows` runs frontend and Rust too, so the run yields one complete `ci / ci-ok`. Removing the label doesn't trigger a run.
+Why two callers: GitHub judges a required check by the **latest run of its workflow** on the head commit. When `ci.yml` also listened to `labeled`, the `release:patch` label that is added right after a PR is created started a run whose `ci` job was skipped; when that run was the latest, `ci / ci-ok` showed "Expected — Waiting for status to be reported" and the PR stayed blocked with every check green. Now no label event starts `ci.yml`, so its latest run on the head commit always reports `ci / ci-ok`, and label changes run only in `ci-windows.yml`, whose checks are not required.
 
-Only a new commit cancels a CI run (`cancel-in-progress` on `synchronize` only), so a cancelled `ci / ci-ok` always belongs to an outdated commit. A cancelled or failed check on the head commit blocks the merge even when a later run of the same check passes, and GitHub cancels an older pending run whenever a newer one queues in the same group, also without `cancel-in-progress`. So a label run never shares a group: adding `windows` runs next to the running CI instead of replacing it, and a burst of label events cancels nothing. The cost: toggling `windows` several times starts several Windows runs, and a label run on a commit that a push makes outdated runs to the end.
+`ci-windows.yml` runs on `opened`, `synchronize`, `reopened` and `labeled`. Its `windows label` job starts only when the event says `windows` (the label just added, or a commit event on a PR that has it), waits 10 s and confirms through the API that the PR still has the label; only then it calls the CI workflow with `only: windows`, which runs the `config` and `windows` jobs. So Windows runs once per commit while the label is set, plus once when it is added; `ci.yml` never runs it on a PR, so nothing runs twice. Adding the label and removing it within those 10 s runs nothing.
+
+The Windows checks (`ci-windows / windows`, ...) are **not required**: a Windows failure on a PR shows as a failed check but doesn't block the merge, so wait for it on a labelled PR. On `main` Windows runs in `ci.yml` and a failure blocks the release.
+
+Concurrency, as for `ci.yml`: only a new commit cancels a run (`cancel-in-progress` on `synchronize` only), so a cancelled check always belongs to an outdated commit. GitHub cancels an older pending run whenever a newer one queues in the same group, also without `cancel-in-progress`, so every label run of `ci-windows.yml` gets a group of its own and a burst of label events cancels nothing. The cost: adding `windows` several times within a few seconds can start several Windows runs, and a label run on a commit that a push makes outdated runs to the end.
 
 Each repo needs a `windows` label: `gh label create windows --color 0078D6 --description "Run the Windows CI checks on this PR"`.
 
@@ -163,7 +168,7 @@ In each repo's branch protection (or ruleset) for `main`, require:
 - `ci / ci-ok` (from `ci.yml`)
 - `pr-checks / Changelog entry` and `pr-checks / Release label` (from `pr-checks.yml`)
 
-Don't require `ci / frontend`, `ci / rust` or `ci / windows`: `ci-ok` aggregates them, and `ci / windows` is skipped (reported as passing) on most PRs.
+Don't require `ci / frontend`, `ci / rust` or `ci / windows`: `ci-ok` aggregates them, and `ci / windows` is skipped (reported as passing) on every PR. Don't require any check of `ci-windows.yml` either: it only runs with the `windows` label.
 
 ### Caller requirements
 
@@ -171,6 +176,8 @@ Don't require `ci / frontend`, `ci / rust` or `ci / windows`: `ci-ok` aggregates
 - **`ci-repo` / `ci-ref`:** default to `Myrras/rust-base` and `v2`. To test a branch of this repo from an app, change both the `@ref` in `uses:` and `ci-ref` to that branch.
 - **Changelog:** `CHANGELOG.md` must have a `## [Unreleased]` heading; a release without it fails.
 - **Release bump:** the highest of release:patch, release:minor and release:major across all PRs since the last tag.
+- **ci caller:** no `labeled`/`unlabeled` in `pull_request.types`; a label run would replace the latest `ci / ci-ok` (see [Windows checks](#windows-checks-and-the-windows-label)).
+- **ci-windows caller:** its `windows label` job needs `pull-requests: read`.
 - **pr-checks caller:** grants `contents: read` and `pull-requests: read` (the gates read the PR's labels through the API) and has no `concurrency:` block. Without `pull-requests: read` the workflow fails to start.
 - **Labels:** `release:patch`, `release:minor`, `release:major`, `no-release` and `windows` must exist in the repo. Only the `release:` names count as bumps: Dependabot applies bare `major`/`minor`/`patch` labels itself when they exist, and those are ignored.
 - **Linux Rust job:** the workspace must build and pass `cargo test --workspace` on `ubuntu-latest` with the packages installed by `reusable-tauri-ci.yml` (WebKitGTK 4.1, libsoup 3, JavaScriptCoreGTK 4.1, appindicator, librsvg, libxdo, OpenSSL, D-Bus, pkg-config). Gate tests that need a desktop session or macOS behind `cfg`, or set `ci.rust-runner` to `macos-latest` in `.github/rust-base.json`.
@@ -239,7 +246,7 @@ src/                       # React frontend (presentation only)
 ci/                        # shared CI: common.just and scripts/ (see Shared CI)
 examples/                  # caller workflows for apps
 packages/config/           # @myrras/rust-base-config: shared ESLint, Prettier and tsconfig (npm)
-.github/workflows/         # reusable-*.yml, plus this repo's callers: ci, pr-checks, build, integration, self-ci
+.github/workflows/         # reusable-*.yml, plus this repo's callers: ci, ci-windows, pr-checks, build, integration, self-ci
 .github/dependabot.yml     # weekly grouped updates: actions, cargo, npm (canary; apps get a monthly config)
 ```
 
