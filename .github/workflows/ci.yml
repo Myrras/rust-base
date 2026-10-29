@@ -2,30 +2,25 @@
 # every PR self-tests the shared CI. Shared files come from this repo at the
 # PR's head commit (ci-repo/ci-ref). Apps use examples/ci.yml instead, which
 # pins @v2 and adds the release job. The template app is never released.
-# Every push to main runs CI, including Windows. Pull requests run Windows only
-# with the `windows` label; adding the label starts a CI run with Windows next
-# to the running CI. Any other label (e.g. release:patch) starts a run whose
-# `ci` job is skipped: it adds no `ci / ci-ok` check. No label event cancels a
-# run.
+#
+# Every push to main runs CI, including Windows. Pull requests run frontend and
+# Rust only; Windows on a PR comes from ci-windows.yml (the `windows` label).
+# No label event starts this workflow: GitHub judges the required `ci / ci-ok`
+# by the latest run of this workflow on the head commit, so a label run that
+# skipped `ci` would hide it ("Expected — Waiting for status to be reported").
 name: CI
 
 on:
   push:
     branches: [main]
   pull_request:
-    types: [opened, synchronize, reopened, labeled]
+    types: [opened, synchronize, reopened]
 
 concurrency:
-  # Only a new commit cancels a run, so a cancelled `ci / ci-ok` always belongs
-  # to an outdated commit and never blocks the merge. Commit runs (push,
-  # opened, synchronize, reopened) share one group per branch; `synchronize`
-  # cancels the run of the previous commit. Every label run gets a group of its
-  # own: GitHub keeps only the newest pending run per group and cancels older
-  # pending ones even without cancel-in-progress, so a shared group (even one
-  # per commit) would let a burst of label events cancel a run on the head
-  # commit. Adding `windows` therefore runs CI with Windows next to the
-  # running CI instead of replacing it.
-  group: ci-${{ github.ref }}${{ github.event.action == 'labeled' && format('-run-{0}', github.run_id) || '' }}
+  # Only a new commit cancels a run (`synchronize` cancels the run of the
+  # previous commit), so a cancelled `ci / ci-ok` always belongs to an
+  # outdated commit and never blocks the merge.
+  group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' && github.event.action == 'synchronize' }}
 
 permissions:
@@ -33,9 +28,6 @@ permissions:
 
 jobs:
   ci:
-    # Keep this condition: it is what stops an unrelated label from producing
-    # a skipped (= passing) `ci / ci-ok` check.
-    if: github.event.action != 'labeled' || github.event.label.name == 'windows'
     uses: ./.github/workflows/reusable-tauri-ci.yml
     with:
       ci-repo: ${{ github.repository }}

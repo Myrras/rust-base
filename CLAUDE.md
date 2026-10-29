@@ -123,7 +123,8 @@ justfile. `dev-signed` and `install-signed` need the gitignored
 (`security find-identity -v -p codesigning`) or copy it from another checkout.
 
 CI is a set of thin callers in `.github/workflows/`: `ci.yml` (checks; in an app
-also the release on push to `main`), `pr-checks.yml` (changelog entry + release
+also the release on push to `main`), `ci-windows.yml` (Windows checks on a PR
+with the `windows` label), `pr-checks.yml` (changelog entry + release
 label), `build.yml` (installers, dispatched by the release) and
 `integration.yml` (nightly `just test-integration`). In an app they call
 `Myrras/rust-base/.github/workflows/reusable-*.yml@v2`. In rust-base
@@ -133,11 +134,14 @@ every PR here self-tests the shared CI on the template app. rust-base's `ci.yml`
 has no release job: the template app is never released. Behaviour is documented
 in `README.md`.
 
-Rust checks run on ubuntu. Windows runs on pushes to `main` and on PRs that carry
-the `windows` label (adding the label re-runs CI for the PR). The required check
-is `ci / ci-ok` plus `pr-checks / Changelog entry` and `pr-checks / Release label`;
-don't require `ci / frontend`, `ci / rust` or `ci / windows`. The `windows` label
-must exist in the repo.
+Rust checks run on ubuntu. Windows runs on pushes to `main` (in `ci.yml`, gating
+the release) and on PRs that carry the `windows` label (in `ci-windows.yml`: when
+the label is added and on every new commit while it is there). `ci.yml` never
+listens to label events, so its latest run always reports `ci / ci-ok`. The
+required check is `ci / ci-ok` plus `pr-checks / Changelog entry` and
+`pr-checks / Release label`; don't require `ci / frontend`, `ci / rust`,
+`ci / windows` or any `ci-windows` check (a Windows failure on a PR doesn't block
+the merge, so wait for it). The `windows` label must exist in the repo.
 
 ### When to add the `windows` label
 
@@ -247,12 +251,13 @@ reference (inputs, secrets, labels, required checks) is in `README.md`.
 
 - **Interface:** the reusable workflows' inputs and secrets, the check names
   (`ci / ci-ok`, `pr-checks / Changelog entry`, `pr-checks / Release label`)
-  and the `ci/common.just` recipe names. Apps pin `@v2`, which is moved to the
+  and the `ci/common.just` recipe names. Never add `labeled`/`unlabeled` to
+  `ci.yml`: a label run becomes the latest run and hides `ci / ci-ok`. Apps pin `@v2`, which is moved to the
   latest compatible commit; a breaking change ships as `v3`. `v1` is the old ci-workflows layout and is frozen. Never create or
   move a tag (including `v2`) without the owner's explicit OK.
 - **Naming:** reusable workflows are `on: workflow_call` only and named
-  `reusable-*.yml`. The standard names (`ci.yml`, `pr-checks.yml`, `build.yml`,
-  `integration.yml`) are this repo's own callers: keep them like the app
+  `reusable-*.yml`. The standard names (`ci.yml`, `ci-windows.yml`,
+  `pr-checks.yml`, `build.yml`, `integration.yml`) are this repo's own callers: keep them like the app
   callers, except that they use the local reusable workflows and pass
   `ci-repo`/`ci-ref`.
 - **Shared files:** a reusable workflow checks out `ci-repo` at `ci-ref` into
