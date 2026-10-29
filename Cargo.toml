@@ -7,6 +7,7 @@ version = "0.2.0"
 edition = "2021"
 rust-version = "1.82"
 authors = ["Rust Application Boilerplate contributors"]
+license = "MIT"
 
 [workspace.dependencies]
 # Shared across app-core and the Tauri shell.

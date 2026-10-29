@@ -16,6 +16,7 @@ when it merges.
 - Shared frontend config package `@myrras/rust-base-config` (ESLint, Prettier,
   TypeScript) in `packages/config/`, published to npm on `config-vX.Y.Z` tags.
   The template app uses it; apps migrate in a later step.
+- Licensed under MIT.
 
 ### Changed
 
