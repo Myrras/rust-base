@@ -16,6 +16,6 @@ permissions:
 
 jobs:
   pr-checks:
-    uses: RobbieMinderhoud/ci-workflows/.github/workflows/pr-checks.yml@v1
+    uses: RobbieMinderhoud/rust-base/.github/workflows/reusable-pr-checks.yml@v1
     # with:
     #   ci-ref: v1

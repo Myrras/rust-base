@@ -34,25 +34,22 @@ jobs:
         run: npx --yes prettier@3 --check .
 
       - name: shellcheck
-        run: |
-          if [ -d scripts ]; then
-            shellcheck scripts/*.sh
-          fi
+        run: shellcheck ci/scripts/*.sh
 
       - name: Script tests
         run: |
           shopt -s nullglob
-          for t in scripts/*.test.sh; do
+          for t in ci/scripts/*.test.sh; do
             echo "::group::$t"
             bash "$t"
             echo "::endgroup::"
           done
 
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
-        if: hashFiles('common.just') != ''
 
       - name: just format and list
-        if: hashFiles('common.just') != ''
         run: |
-          just --fmt --check --unstable -f common.just
-          just -f common.just --list
+          just --fmt --check --unstable -f ci/common.just
+          just --fmt --check --unstable
+          just -f ci/common.just --list
+          just --list

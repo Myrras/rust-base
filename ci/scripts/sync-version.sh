@@ -8,7 +8,7 @@
 #   sync-version.sh --set X.Y.Z  set the version in Cargo.toml, then propagate
 #
 # Run it from the app repo root: the manifests are resolved against the current
-# directory, not against this script's location (in CI it lives in $RUNNER_TEMP/ci/scripts/).
+# directory, not against this script's location (in CI it lives in $RUNNER_TEMP/rust-base/ci/scripts/).
 # Uses perl for in-place edits so it works with the BSD tooling on macOS.
 set -euo pipefail
 

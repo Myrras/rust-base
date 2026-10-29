@@ -2,7 +2,7 @@
 # `## [Unreleased]` section into the next version, bumps the manifests, commits
 # `Release vX.Y.Z [skip ci]` to main, tags it, creates the GitHub Release and
 # dispatches the caller's build.yml, which attaches the installers.
-# pr-checks.yml makes every PR add that entry and carry exactly one release
+# reusable-pr-checks.yml makes every PR add that entry and carry exactly one release
 # label (release:patch, release:minor or release:major).
 #
 # One release can cover several merged PRs: GitHub cancels a pending run on
@@ -18,9 +18,13 @@ on:
   workflow_call:
     inputs:
       ci-ref:
-        description: Ref of RobbieMinderhoud/ci-workflows to fetch the shared scripts from.
+        description: Ref of `ci-repo` to fetch the shared scripts (`ci/scripts/`) from.
         type: string
         default: v1
+      ci-repo:
+        description: Repository holding the shared files (`ci/common.just`, `ci/scripts/`).
+        type: string
+        default: RobbieMinderhoud/rust-base
       title-prefix:
         description: >-
           Prefix for the GitHub Release title and the tag message, joined with a
@@ -75,7 +79,7 @@ jobs:
           HAS_KEY: ${{ secrets.RELEASE_DEPLOY_KEY != '' }}
           REQUIRE_KEY: ${{ inputs.require-deploy-key }}
         run: |
-          fix="ssh-keygen -t ed25519 -N '' -C release -f release_key; gh repo deploy-key add release_key.pub --allow-write --title 'CI release'; gh secret set RELEASE_DEPLOY_KEY < release_key; delete both key files; add DeployKey as a bypass actor on main's ruleset; pass RELEASE_DEPLOY_KEY to release.yml under the caller job's secrets (no secrets: inherit)."
+          fix="ssh-keygen -t ed25519 -N '' -C release -f release_key; gh repo deploy-key add release_key.pub --allow-write --title 'CI release'; gh secret set RELEASE_DEPLOY_KEY < release_key; delete both key files; add DeployKey as a bypass actor on main's ruleset; pass RELEASE_DEPLOY_KEY to reusable-release.yml under the caller job's secrets (no secrets: inherit)."
           if [ "$HAS_KEY" != "true" ]; then
             if [ "$REQUIRE_KEY" = "true" ]; then
               echo "::error title=RELEASE_DEPLOY_KEY missing::The release push needs a deploy key. $fix"
@@ -99,11 +103,11 @@ jobs:
       # land in the release commit.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: RobbieMinderhoud/ci-workflows
+          repository: ${{ inputs.ci-repo }}
           ref: ${{ inputs.ci-ref }}
           path: .ci
           persist-credentials: false
-      - run: mv .ci "$RUNNER_TEMP/ci"
+      - run: mv .ci "$RUNNER_TEMP/rust-base"
 
       # changelog.sh exits 1 for an empty Unreleased section: an earlier run
       # already released this, so the run stays green. Any other failure (no
@@ -112,7 +116,7 @@ jobs:
         id: pending
         run: |
           status=0
-          bash "$RUNNER_TEMP/ci/scripts/changelog.sh" unreleased > "$RUNNER_TEMP/notes.md" || status=$?
+          bash "$RUNNER_TEMP/rust-base/ci/scripts/changelog.sh" unreleased > "$RUNNER_TEMP/notes.md" || status=$?
           case $status in
             0) echo "release=true" >> "$GITHUB_OUTPUT" ;;
             1) echo "::notice::Nothing under ## [Unreleased] in CHANGELOG.md; already released." ;;
@@ -173,7 +177,7 @@ jobs:
           BUMP: ${{ steps.bump.outputs.bump }}
         run: |
           if [ -n "$PREV" ]; then
-            tag=$(bash "$RUNNER_TEMP/ci/scripts/next-version.sh" "$PREV" "release:$BUMP")
+            tag=$(bash "$RUNNER_TEMP/rust-base/ci/scripts/next-version.sh" "$PREV" "release:$BUMP")
             echo "$PREV → $tag ($BUMP)"
           else
             tag="v$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
@@ -185,10 +189,10 @@ jobs:
       - name: Bump CHANGELOG, manifests and Cargo.lock
         if: steps.pending.outputs.release == 'true'
         run: |
-          bash "$RUNNER_TEMP/ci/scripts/changelog.sh" release "$VERSION" "$(date -u +%F)"
-          bash "$RUNNER_TEMP/ci/scripts/sync-version.sh" --set "$VERSION"
+          bash "$RUNNER_TEMP/rust-base/ci/scripts/changelog.sh" release "$VERSION" "$(date -u +%F)"
+          bash "$RUNNER_TEMP/rust-base/ci/scripts/sync-version.sh" --set "$VERSION"
           cargo update --workspace
-          bash "$RUNNER_TEMP/ci/scripts/sync-version.sh" --check
+          bash "$RUNNER_TEMP/rust-base/ci/scripts/sync-version.sh" --check
           git diff --stat
 
       - name: Release title

@@ -1,6 +1,7 @@
 # Shared recipes for the Tauri apps. Run from CI as
-# `just -f "$RUNNER_TEMP/ci/common.just" -d . <recipe>`; import locally from a repo justfile
-# with `import? '~/.ci-workflows/common.just'`.
+# `just -f "$RUNNER_TEMP/rust-base/ci/common.just" -d . <recipe>`; import locally
+# from an app justfile with `import? '~/.rust-base/ci/common.just'` (rust-base
+# itself uses `import 'ci/common.just'`).
 # A repo justfile must not define recipes with the names below, and must not
 # set allow-duplicate-recipes to override them.
 
@@ -56,7 +57,7 @@ dev-signed: _signed-conf
     open "$target_dir/debug/bundle/macos/$app.app"
 
 # Tauri's own dmg step uses HFS+, which is broken on macOS 26+, so only the
-# .app is built here and scripts/make-dmg.sh packages the .dmg (APFS).
+# .app is built here and ci/scripts/make-dmg.sh packages the .dmg (APFS).
 
 # Release build: the .app plus a .dmg (macOS).
 build:

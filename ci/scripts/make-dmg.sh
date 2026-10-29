@@ -10,7 +10,7 @@
 #
 # Usage: make-dmg.sh [REPO_ROOT]
 #   REPO_ROOT defaults to the current directory (the caller repo root), so the
-#   shared copy is run as `$RUNNER_TEMP/ci/scripts/make-dmg.sh` from there.
+#   shared copy is run as `$RUNNER_TEMP/rust-base/ci/scripts/make-dmg.sh` from there.
 # Environment: CARGO_TARGET_DIR overrides <REPO_ROOT>/target (as set by local
 #   `just` recipes); CI leaves it unset.
 set -euo pipefail

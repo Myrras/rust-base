@@ -31,7 +31,7 @@ jobs:
     # Keep this condition: it is what stops an unrelated label from producing
     # a skipped (= passing) `ci / ci-ok` check.
     if: github.event.action != 'labeled' || github.event.label.name == 'windows'
-    uses: RobbieMinderhoud/ci-workflows/.github/workflows/tauri-ci.yml@v1
+    uses: RobbieMinderhoud/rust-base/.github/workflows/reusable-tauri-ci.yml@v1
     # with:
     #   rust-runner: ubuntu-latest
     #   windows: auto                    # auto | always | never
@@ -42,7 +42,7 @@ jobs:
   release:
     needs: ci
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    uses: RobbieMinderhoud/ci-workflows/.github/workflows/release.yml@v1
+    uses: RobbieMinderhoud/rust-base/.github/workflows/reusable-release.yml@v1
     permissions:
       contents: write
       pull-requests: read

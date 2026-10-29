@@ -1,116 +1,18 @@
 name: Build
 
-# Reusable: build installable desktop bundles (macOS .dmg, Windows NSIS .exe).
-# Caller dispatches it with `--ref <tag>`; on a v* tag the installers are also
-# attached to that tag's GitHub Release.
+# Builds the template app's installers by hand from the Actions tab, to test
+# the LOCAL reusable build workflow. rust-base has no release job, so nothing
+# dispatches this; in an app, the shared release workflow dispatches build.yml
+# by name with `--ref <tag>`, so it must stay named `build.yml`.
 on:
-  workflow_call:
-    inputs:
-      ci-ref:
-        description: Ref of RobbieMinderhoud/ci-workflows to fetch shared files from
-        type: string
-        default: v1
-
-defaults:
-  run:
-    shell: bash
+  workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
-    name: Build (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
-    permissions:
-      contents: write
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest, windows-latest]
-
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Checkout shared CI files
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: RobbieMinderhoud/ci-workflows
-          ref: ${{ inputs.ci-ref }}
-          path: .ci
-          persist-credentials: false
-
-      - name: Move shared CI files out of the workspace
-        run: mv .ci "$RUNNER_TEMP/ci"
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-        with:
-          version: 10
-
-      - name: Install Node
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
-        with:
-          toolchain: stable
-
-      - name: Cache Rust build
-        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-        with:
-          key: ${{ runner.os }}
-
-      - name: Install frontend dependencies
-        run: pnpm install --frozen-lockfile
-
-      # macOS: Tauri's own dmg step uses HFS+, broken on macOS 26+, so build
-      # the .app and package the .dmg ourselves (APFS).
-      - name: Build app bundle (macOS)
-        if: runner.os == 'macOS'
-        run: pnpm tauri build --bundles app
-
-      - name: Package DMG (APFS)
-        if: runner.os == 'macOS'
-        run: |
-          "$RUNNER_TEMP/ci/scripts/make-dmg.sh"
-
-      - name: Upload macOS bundle
-        if: runner.os == 'macOS'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: ${{ github.event.repository.name }}-${{ runner.os }}
-          # Cargo workspace: target/ is at the repo root, not under src-tauri/.
-          path: target/release/bundle/dmg/*.dmg
-          if-no-files-found: error
-
-      - name: Attach macOS installer to release
-        if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/v')
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$GITHUB_REF_NAME" target/release/bundle/dmg/*.dmg --clobber
-
-      # Windows: NSIS .exe installer only.
-      - name: Build app bundle (Windows)
-        if: runner.os == 'Windows'
-        run: pnpm tauri build --bundles nsis
-
-      - name: Upload Windows bundle
-        if: runner.os == 'Windows'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: ${{ github.event.repository.name }}-${{ runner.os }}
-          path: target/release/bundle/nsis/*.exe
-          if-no-files-found: error
-
-      - name: Attach Windows installer to release
-        if: runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/v')
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$GITHUB_REF_NAME" target/release/bundle/nsis/*.exe --clobber
+    uses: ./.github/workflows/reusable-build.yml
+    with:
+      ci-repo: ${{ github.repository }}
+      ci-ref: ${{ github.sha }}

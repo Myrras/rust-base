@@ -1,0 +1,134 @@
+name: Integration
+
+# Reusable integration-test workflow. Runs `just <recipe>` from the CALLING
+# repo's justfile, so each repo owns what its integration tests are (which test
+# binaries, feature flags, `--ignored`, `--test-threads=1`, ...). This workflow
+# only provides the environment around it:
+#
+#   - toolchain + cache (Rust, just)
+#   - optional apt packages (Linux runners)
+#   - optional WSL distro (Windows runners, Vampire/setup-wsl)
+#   - optional extra environment variables (`env` input)
+#   - optional secret `INTEGRATION_TOKEN`, exposed to the test step only
+#
+# Container-backed tests (testcontainers) need nothing extra: Docker is
+# preinstalled on the ubuntu runners.
+#
+# `ci-repo` and `ci-ref` are accepted for uniformity with the other shared
+# workflows. This workflow uses no shared files from rust-base, so they are
+# currently unused.
+on:
+  workflow_call:
+    inputs:
+      ci-ref:
+        description: Ref of `ci-repo` (reserved; no shared files are used here).
+        type: string
+        default: v1
+      ci-repo:
+        description: Repository holding the shared files (reserved; no shared files are used here).
+        type: string
+        default: RobbieMinderhoud/rust-base
+      runner:
+        description: Runner label for the job.
+        type: string
+        default: ubuntu-latest
+      apt-packages:
+        description: Space-separated apt packages to install (Linux runners only).
+        type: string
+        default: ""
+      setup-wsl:
+        description: Install a WSL distro with Vampire/setup-wsl (Windows runners only).
+        type: boolean
+        default: false
+      wsl-distro:
+        description: WSL distribution to install when setup-wsl is true.
+        type: string
+        default: Ubuntu-24.04
+      wsl-packages:
+        description: Space-separated packages to install inside the WSL distro (e.g. "git procps").
+        type: string
+        default: ""
+      env:
+        description: >-
+          Extra environment variables, one KEY=value per line, written to
+          GITHUB_ENV before the tests run. Not for secrets (inputs are not masked).
+        type: string
+        default: ""
+      recipe:
+        description: Recipe in the calling repo's justfile that runs the integration tests.
+        type: string
+        default: test-integration
+    secrets:
+      INTEGRATION_TOKEN:
+        description: Token for tests that talk to a real external API; exposed as env INTEGRATION_TOKEN.
+        required: false
+
+defaults:
+  run:
+    shell: bash
+
+permissions:
+  contents: read
+
+jobs:
+  integration:
+    name: Integration tests
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install apt packages
+        if: runner.os == 'Linux' && inputs.apt-packages != ''
+        env:
+          APT_PACKAGES: ${{ inputs.apt-packages }}
+        run: |
+          read -r -a packages <<< "$APT_PACKAGES"
+          sudo apt-get update
+          sudo apt-get install -y "${packages[@]}"
+
+      - name: Set up WSL
+        if: inputs.setup-wsl
+        uses: Vampire/setup-wsl@4c48163d9f981914dd8caa0fc335fe19cca5bff4 # v7.2.0
+        with:
+          distribution: ${{ inputs.wsl-distro }}
+          additional-packages: ${{ inputs.wsl-packages }}
+
+      - name: Export extra environment
+        if: inputs.env != ''
+        env:
+          EXTRA_ENV: ${{ inputs.env }}
+        run: |
+          while IFS= read -r line || [ -n "$line" ]; do
+            line="${line%$'\r'}"
+            case "$line" in
+              '' | '#'*) continue ;;
+            esac
+            if [[ ! "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then
+              echo "::error::env input: expected KEY=value, got: ${line%%=*}"
+              exit 1
+            fi
+            printf '%s\n' "$line" >> "$GITHUB_ENV"
+          done <<< "$EXTRA_ENV"
+
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: integration
+
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+
+      # Tauri's build script needs the frontend output dir to exist.
+      - name: Create dist
+        run: mkdir -p dist
+
+      - name: Run integration tests
+        env:
+          RECIPE: ${{ inputs.recipe }}
+          INTEGRATION_TOKEN: ${{ secrets.INTEGRATION_TOKEN }}
+        run: just "$RECIPE"
