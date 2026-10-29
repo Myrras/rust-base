@@ -8,7 +8,15 @@
 #
 # The caller triggers on pull_request with the label event types (see
 # examples/pr-checks.yml), separate from CI so that labelling a PR doesn't
-# re-run the full build.
+# re-run the full build. The caller has no concurrency group and grants
+# `pull-requests: read`.
+#
+# Every event starts a run and every run completes: a cancelled or failed run
+# stays on the head commit and blocks the merge, even when a later run passes.
+# So the gates don't judge the event payload, which only holds the labels at
+# the time of that event. They wait SETTLE_SECONDS and then read the PR's
+# current labels through the API. Dependabot opens a PR and adds its labels
+# seconds later; the run started by `opened` then sees them too.
 name: pr-checks
 
 on:
@@ -30,36 +38,69 @@ defaults:
   run:
     shell: bash
 
+env:
+  SETTLE_SECONDS: 15
+
 jobs:
   changelog:
     name: Changelog entry
-    # Skipped for Dependabot PRs and PRs labelled `no-release` (the workflow
-    # re-runs on labeled/unlabeled). Judged on the PR author, not github.actor,
-    # which changes when someone rebases the PR. A deps-only merge has no
-    # CHANGELOG entry, so reusable-release.yml treats it as "nothing to release"; the
-    # bumps ship with the next release. Likewise a `no-release` PR that adds no
-    # entry; if it does add Unreleased entries they ship with the next release.
+    # Skipped for Dependabot PRs. Judged on the PR author, not github.actor,
+    # which changes when someone rebases the PR. The author never changes, so
+    # the payload is safe here; labels are not, so `no-release` is checked in
+    # a step. A deps-only merge has no CHANGELOG entry, so
+    # reusable-release.yml treats it as "nothing to release"; the bumps ship
+    # with the next release. Likewise a `no-release` PR that adds no entry; if
+    # it does add Unreleased entries they ship with the next release.
     if: >-
       github.event_name == 'pull_request'
       && github.event.pull_request.user.login != 'dependabot[bot]'
-      && !contains(github.event.pull_request.labels.*.name, 'no-release')
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Read the current labels
+        id: labels
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          sleep "$SETTLE_SECONDS"
+          labels=
+          for retry in 0 5 10; do
+            sleep "$retry"
+            labels=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json labels --jq '[.labels[].name]') && break
+          done
+          if [ -z "$labels" ]; then
+            echo "::error::Could not read the labels of PR #$PR."
+            exit 1
+          fi
+          echo "labels: $labels"
+          echo "skip=$(jq 'any(.[]; . == "no-release")' <<< "$labels")" >> "$GITHUB_OUTPUT"
+
+      - name: Skip for no-release
+        if: steps.labels.outputs.skip == 'true'
+        run: echo "::notice::Labelled no-release, no CHANGELOG entry needed."
+
+      - if: steps.labels.outputs.skip != 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - if: steps.labels.outputs.skip != 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ inputs.ci-repo }}
           ref: ${{ inputs.ci-ref }}
           path: .ci
           persist-credentials: false
-      - run: mv .ci "$RUNNER_TEMP/rust-base"
+      - if: steps.labels.outputs.skip != 'true'
+        run: mv .ci "$RUNNER_TEMP/rust-base"
 
       - name: PR adds a CHANGELOG entry
+        if: steps.labels.outputs.skip != 'true'
         env:
           BASE_REF: ${{ github.base_ref }}
         run: |
@@ -74,13 +115,26 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    permissions: {}
+    permissions:
+      pull-requests: read
     steps:
       - name: Require exactly one release label
         env:
-          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
         run: |
-          count=$(jq '[.[] | select(. == "release:patch" or . == "release:minor" or . == "release:major" or . == "no-release")] | length' <<< "$LABELS")
+          sleep "$SETTLE_SECONDS"
+          labels=
+          for retry in 0 5 10; do
+            sleep "$retry"
+            labels=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json labels --jq '[.labels[].name]') && break
+          done
+          if [ -z "$labels" ]; then
+            echo "::error::Could not read the labels of PR #$PR."
+            exit 1
+          fi
+          echo "labels: $labels"
+          count=$(jq '[.[] | select(. == "release:patch" or . == "release:minor" or . == "release:major" or . == "no-release")] | length' <<< "$labels")
           if [ "$count" -ne 1 ]; then
             echo "::error::Add exactly one release label to this PR: release:patch, release:minor, release:major, or no-release for CI/config/docs-only changes that shouldn't release (found $count)."
             exit 1
