@@ -12,7 +12,7 @@ Every PR here runs the shared CI on the template app: this repo's own callers us
 
 ### Reusable workflows
 
-All are `on: workflow_call` only. Every workflow takes `ci-repo` (string, default `RobbieMinderhoud/rust-base`) and `ci-ref` (string, default `v2`): the repo and ref from which the shared files (`ci/common.just`, `ci/scripts/`) are fetched into `$RUNNER_TEMP/rust-base`. The shared checkout is moved there right after checkout, so it is never inside the caller workspace. In `reusable-integration.yml` both are reserved (accepted for uniformity, no shared files are fetched). Secrets are passed explicitly; never use `secrets: inherit`.
+All are `on: workflow_call` only. Every workflow takes `ci-repo` (string, default `Myrras/rust-base`) and `ci-ref` (string, default `v2`): the repo and ref from which the shared files (`ci/common.just`, `ci/scripts/`) are fetched into `$RUNNER_TEMP/rust-base`. The shared checkout is moved there right after checkout, so it is never inside the caller workspace. In `reusable-integration.yml` both are reserved (accepted for uniformity, no shared files are fetched). Secrets are passed explicitly; never use `secrets: inherit`.
 
 | Workflow                   | Inputs                                                                                                                                                                                                                                                                                                                                                                               | Secrets                                                            | Notes                                                                                                                                                                                            |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -168,7 +168,7 @@ Don't require `ci / frontend`, `ci / rust` or `ci / windows`: `ci-ok` aggregates
 ### Caller requirements
 
 - **pnpm:** `pnpm/action-setup` is given `version: 10`. Do not add a `packageManager` field to `package.json` that conflicts with it, or the setup fails with "Multiple versions of pnpm specified".
-- **`ci-repo` / `ci-ref`:** default to `RobbieMinderhoud/rust-base` and `v2`. To test a branch of this repo from an app, change both the `@ref` in `uses:` and `ci-ref` to that branch.
+- **`ci-repo` / `ci-ref`:** default to `Myrras/rust-base` and `v2`. To test a branch of this repo from an app, change both the `@ref` in `uses:` and `ci-ref` to that branch.
 - **Changelog:** `CHANGELOG.md` must have a `## [Unreleased]` heading; a release without it fails.
 - **Release bump:** the highest of release:patch, release:minor and release:major across all PRs since the last tag.
 - **Labels:** `release:patch`, `release:minor`, `release:major`, `no-release` and `windows` must exist in the repo. Only the `release:` names count as bumps: Dependabot applies bare `major`/`minor`/`patch` labels itself when they exist, and those are ignored.
@@ -182,7 +182,7 @@ Apps pin `@v2`. The `v2` tag is moved to the latest compatible commit. Breaking 
 
 `.github/workflows/sync.yml` pushes the payload in `sync/` to every app in `sync/apps.txt` (one `owner/repo` per line). It runs on a push to `main` that touches `sync/**` or `ci/scripts/sync-apply.sh`, and on `workflow_dispatch`.
 
-- `sync/files/<path>` is copied verbatim to `<path>` in each app, overwriting it. Only files listed there are synced.
+- `sync/files/<path>` is copied verbatim to `<path>` in each app, overwriting it. Only files listed there are synced. This includes `.github/CODEOWNERS` (`* @Myrras`) and the caller workflows in `.github/workflows/`.
 - `sync/CLAUDE.block.md` goes into the app's `CLAUDE.md`, between `<!-- rust-base:start -->` and `<!-- rust-base:end -->`. Without the markers the block is inserted after the first `# ` heading paragraph. Text outside the markers is never touched.
 - Per app, `ci/scripts/sync-apply.sh` does the work. If nothing differs, nothing happens. Otherwise the workflow force-pushes one commit to the branch `rust-base/sync` and opens or updates the PR "Sync shared files from rust-base" with the label `no-release`. The body lists the changed files and the rust-base commit.
 - **Secret:** `SYNC_TOKEN`, a fine-grained PAT with contents and pull-requests write on all apps. The workflow's own token is read-only. Without the secret the run fails with an error.
@@ -220,7 +220,7 @@ Releases are independent of the CI tags (`v2`); SemVer, tags `config-vX.Y.Z`:
 2. Tag the merge commit `config-vX.Y.Z` and push the tag (owner only).
 3. `.github/workflows/publish-config.yml` checks that the tag matches `package.json` and runs `npm publish --provenance --access public` through npm trusted publishing (OIDC, no token). `gh workflow run publish-config.yml --ref config-vX.Y.Z` re-runs it for an existing tag.
 
-Trusted publishing can only be configured for a package that already exists, so the first version is published by hand (`npm publish --access public` in `packages/config/`). After that, add `RobbieMinderhoud/rust-base` with workflow `publish-config.yml` as the trusted publisher in the package's npm settings.
+Trusted publishing can only be configured for a package that already exists, so the first version is published by hand (`npm publish --access public` in `packages/config/`). After that, add `Myrras/rust-base` with workflow `publish-config.yml` as the trusted publisher in the package's npm settings.
 
 ## Template app
 

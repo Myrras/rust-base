@@ -1,7 +1,7 @@
 # @myrras/rust-base-config
 
 Shared frontend tooling config for apps built from
-[rust-base](https://github.com/RobbieMinderhoud/rust-base) (Tauri 2 + React +
+[rust-base](https://github.com/Myrras/rust-base) (Tauri 2 + React +
 Vite): ESLint, Prettier and TypeScript.
 
 ## Install

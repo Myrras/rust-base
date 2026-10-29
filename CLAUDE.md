@@ -126,7 +126,7 @@ CI is a set of thin callers in `.github/workflows/`: `ci.yml` (checks; in an app
 also the release on push to `main`), `pr-checks.yml` (changelog entry + release
 label), `build.yml` (installers, dispatched by the release) and
 `integration.yml` (nightly `just test-integration`). In an app they call
-`RobbieMinderhoud/rust-base/.github/workflows/reusable-*.yml@v2`. In rust-base
+`Myrras/rust-base/.github/workflows/reusable-*.yml@v2`. In rust-base
 they call the local `./.github/workflows/reusable-*.yml` with
 `ci-repo: ${{ github.repository }}` and the PR's head commit as `ci-ref`, so
 every PR here self-tests the shared CI on the template app. rust-base's `ci.yml`

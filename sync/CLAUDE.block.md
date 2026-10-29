@@ -1,7 +1,7 @@
 ## Shared CI and recipes (rust-base)
 
 CI, release and installer builds come from
-<https://github.com/RobbieMinderhoud/rust-base>. `.github/workflows/` holds thin
+<https://github.com/Myrras/rust-base>. `.github/workflows/` holds thin
 callers (`ci.yml`, `pr-checks.yml`, `build.yml`, `integration.yml`) of its
 reusable workflows, pinned `@v2`. The callers and the shared config files
 (`.gitattributes`, `.editorconfig`, `rust-toolchain.toml`, `.prettierrc.json`,

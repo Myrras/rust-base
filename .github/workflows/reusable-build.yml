@@ -13,7 +13,7 @@ on:
       ci-repo:
         description: Repository holding the shared files (`ci/common.just`, `ci/scripts/`).
         type: string
-        default: RobbieMinderhoud/rust-base
+        default: Myrras/rust-base
 
 defaults:
   run:
