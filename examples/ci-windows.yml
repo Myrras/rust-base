@@ -3,6 +3,8 @@
 # Runs only the Windows job of the CI, on a pull request that carries the
 # `windows` label: when the label is added, and on every new commit while it
 # is there. ci.yml never runs Windows on a pull request, so nothing runs twice.
+# No `opened`: a PR created with labels gets `labeled` events for them, while
+# the `opened` payload may already list them too, which would run it twice.
 # The checks (`ci-windows / windows`, ...) are not required: a Windows failure
 # on a PR is a warning; on main Windows runs in ci.yml and gates the release.
 #
@@ -13,7 +15,7 @@ name: CI Windows
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, labeled]
+    types: [synchronize, reopened, labeled]
 
 concurrency:
   # As ci.yml: only a new commit cancels a run. Every label run gets a group of
@@ -27,8 +29,8 @@ permissions:
   contents: read
 
 jobs:
-  # The event says `windows` (this label was just added, or a commit event on
-  # a PR that has it); confirm that the PR still has it after a short wait, so
+  # The event says `windows` (this label was just added, or a new commit or
+  # reopen of a PR that has it); confirm that the PR still has it after a short wait, so
   # adding and quickly removing the label runs nothing. Other labels and
   # unlabelled PRs skip this job without using a runner.
   label:
