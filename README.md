@@ -282,6 +282,7 @@ just build          # shared recipe: production desktop bundle
       ```
 
       Then add **DeployKey** to the `main` ruleset's bypass list. Without the secret the release job pushes with `GITHUB_TOKEN` (and logs a warning), which works only while `main` is unprotected.
+9. License: apps created from the template may keep MIT or relicense their own code; update the copyright line in `LICENSE`.
 
 ### Releases (in an app)
 
@@ -289,4 +290,4 @@ Every merge to `main` is a release. Each PR adds its entry under `## [Unreleased
 
 ## License
 
-No license file is included — add one before publishing.
+MIT, see [LICENSE](LICENSE).
