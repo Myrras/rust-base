@@ -19,11 +19,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/RobbieMinderhoud/rust-base.git",
+    "url": "git+https://github.com/Myrras/rust-base.git",
     "directory": "packages/config"
   },
-  "homepage": "https://github.com/RobbieMinderhoud/rust-base/tree/main/packages/config#readme",
-  "bugs": "https://github.com/RobbieMinderhoud/rust-base/issues",
+  "homepage": "https://github.com/Myrras/rust-base/tree/main/packages/config#readme",
+  "bugs": "https://github.com/Myrras/rust-base/issues",
   "publishConfig": {
     "access": "public"
   },

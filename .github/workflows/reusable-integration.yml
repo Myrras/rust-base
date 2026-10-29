@@ -31,7 +31,7 @@ on:
       ci-repo:
         description: Repository holding the shared files (reserved; no shared files are used here).
         type: string
-        default: RobbieMinderhoud/rust-base
+        default: Myrras/rust-base
       # Every input falls back to the same key under `integration` in
       # .github/rust-base.json, then to the default named here.
       runner:

@@ -26,6 +26,7 @@ when it merges.
 - Apps: Dependabot runs monthly with minor/patch grouped; app-specific majors come as
   separate PRs; shared-stack majors (React, Tauri, Vite, ESLint, ...) are ignored
   until rust-base decides them.
+- Owner renamed to Myrras: all references updated.
 
 ## [0.2.0] - 2026-10-28
 
