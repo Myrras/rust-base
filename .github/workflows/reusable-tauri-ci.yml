@@ -9,16 +9,21 @@
 #   is added (`labeled` in examples/ci.yml).
 # - The Rust cache is saved only from main; PR runs restore it.
 #
-# The check recipes live in common.just, fetched from this repo (checked out to `.ci`, then moved to `$RUNNER_TEMP/ci`).
+# The check recipes live in ci/common.just, fetched from `ci-repo` at `ci-ref`
+# (checked out to `.ci`, then moved to `$RUNNER_TEMP/rust-base`).
 name: Tauri CI
 
 on:
   workflow_call:
     inputs:
       ci-ref:
-        description: Ref of RobbieMinderhoud/ci-workflows to fetch common.just from.
+        description: Ref of `ci-repo` to fetch `ci/common.just` from.
         type: string
         default: v1
+      ci-repo:
+        description: Repository holding the shared files (`ci/common.just`, `ci/scripts/`).
+        type: string
+        default: RobbieMinderhoud/rust-base
       rust-runner:
         description: Runner for the Rust job. On Linux the Tauri system packages are installed first.
         type: string
@@ -58,13 +63,13 @@ jobs:
       - name: Fetch shared CI files
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: RobbieMinderhoud/ci-workflows
+          repository: ${{ inputs.ci-repo }}
           ref: ${{ inputs.ci-ref }}
           path: .ci
           persist-credentials: false
 
       - name: Move shared CI files out of the workspace
-        run: mv .ci "$RUNNER_TEMP/ci"
+        run: mv .ci "$RUNNER_TEMP/rust-base"
 
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
 
@@ -81,7 +86,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Frontend checks
-        run: just -f "$RUNNER_TEMP/ci/common.just" -d . frontend
+        run: just -f "$RUNNER_TEMP/rust-base/ci/common.just" -d . frontend
 
   rust:
     runs-on: ${{ inputs.rust-runner }}
@@ -94,13 +99,13 @@ jobs:
       - name: Fetch shared CI files
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: RobbieMinderhoud/ci-workflows
+          repository: ${{ inputs.ci-repo }}
           ref: ${{ inputs.ci-ref }}
           path: .ci
           persist-credentials: false
 
       - name: Move shared CI files out of the workspace
-        run: mv .ci "$RUNNER_TEMP/ci"
+        run: mv .ci "$RUNNER_TEMP/rust-base"
 
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
 
@@ -138,7 +143,7 @@ jobs:
           cache-on-failure: true
 
       - name: Rust checks
-        run: just -f "$RUNNER_TEMP/ci/common.just" -d . rust
+        run: just -f "$RUNNER_TEMP/rust-base/ci/common.just" -d . rust
 
       - name: Extra recipe
         if: inputs.extra-recipe != ''
@@ -164,13 +169,13 @@ jobs:
       - name: Fetch shared CI files
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: RobbieMinderhoud/ci-workflows
+          repository: ${{ inputs.ci-repo }}
           ref: ${{ inputs.ci-ref }}
           path: .ci
           persist-credentials: false
 
       - name: Move shared CI files out of the workspace
-        run: mv .ci "$RUNNER_TEMP/ci"
+        run: mv .ci "$RUNNER_TEMP/rust-base"
 
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
 
@@ -188,7 +193,7 @@ jobs:
           cache-on-failure: true
 
       - name: Rust checks
-        run: just -f "$RUNNER_TEMP/ci/common.just" -d . rust
+        run: just -f "$RUNNER_TEMP/rust-base/ci/common.just" -d . rust
 
   ci-ok:
     if: always()

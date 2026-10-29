@@ -10,7 +10,7 @@
 # (nothing to release).
 #
 # Run it from the app repo root: the file is CHANGELOG.md in the current
-# directory, not next to this script (in CI it lives in $RUNNER_TEMP/ci/scripts/).
+# directory, not next to this script (in CI it lives in $RUNNER_TEMP/rust-base/ci/scripts/).
 # CHANGELOG overrides the file (tests). perl/awk only, so it runs on macOS and ubuntu.
 set -euo pipefail
 
