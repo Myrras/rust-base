@@ -137,6 +137,18 @@ Don't require `ci / frontend`, `ci / rust` or `ci / windows`: `ci-ok` aggregates
 
 Apps pin `@v1`. The `v1` tag is moved to the latest compatible commit. Breaking changes ship as `v2`.
 
+### Syncing shared files to the apps
+
+`.github/workflows/sync.yml` pushes the payload in `sync/` to every app in `sync/apps.txt` (one `owner/repo` per line). It runs on a push to `main` that touches `sync/**` or `ci/scripts/sync-apply.sh`, and on `workflow_dispatch`.
+
+- `sync/files/<path>` is copied verbatim to `<path>` in each app, overwriting it. Only files listed there are synced.
+- `sync/CLAUDE.block.md` goes into the app's `CLAUDE.md`, between `<!-- rust-base:start -->` and `<!-- rust-base:end -->`. Without the markers the block is inserted after the first `# ` heading paragraph. Text outside the markers is never touched.
+- Per app, `ci/scripts/sync-apply.sh` does the work. If nothing differs, nothing happens. Otherwise the workflow force-pushes one commit to the branch `rust-base/sync` and opens or updates the PR "Sync shared files from rust-base" with the label `no-release`. The body lists the changed files and the rust-base commit.
+- **Secret:** `SYNC_TOKEN`, a fine-grained PAT with contents and pull-requests write on all apps. The workflow's own token is read-only. Without the secret the run fails with an error.
+- **Labels:** `no-release` must exist in each app.
+- **Unsigned commits:** the bot's commits are not SSH-signed. That is fine as long as the apps' rulesets don't require signed commits.
+- Local run: `ci/scripts/sync-apply.sh <rust-base-dir> <app-dir>`.
+
 ### Self-CI
 
 `.github/workflows/self-ci.yml` runs actionlint (workflows and `examples/*.yml`), shellcheck, the `ci/scripts/*.test.sh` tests, `just --fmt --check` (root `justfile` and `ci/common.just`) and a prettier check of the repo.
