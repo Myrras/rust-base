@@ -8,6 +8,9 @@
 #   test-integration:
 #       cargo test -p my-core --test my_integration -- --ignored
 #
+# On a Linux runner, `just test-integration` builds the whole workspace. A
+# Tauri app then needs the system packages via `apt-packages:` (see below).
+#
 # Off the per-PR path on purpose: image pulls and real external services make
 # these slow and occasionally flaky. They run nightly and on demand.
 name: Integration tests
@@ -22,8 +25,15 @@ permissions:
 
 jobs:
   integration:
-    uses: RobbieMinderhoud/ci-workflows/.github/workflows/integration.yml@v1
+    uses: RobbieMinderhoud/rust-base/.github/workflows/reusable-integration.yml@v1
     # --- Default: runner ubuntu-latest, `just test-integration`, no extras.
+    # --- Tauri apps: the workspace build needs the same packages as the CI
+    # --- workflow installs on Linux:
+    # with:
+    #   apt-packages: >-
+    #     libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev libsoup-3.0-dev
+    #     libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev
+    #     libssl-dev libdbus-1-dev pkg-config build-essential file
     #
     # --- Database drivers or ssh servers via testcontainers (Docker is
     # --- preinstalled on ubuntu runners; the recipe runs one test binary per
