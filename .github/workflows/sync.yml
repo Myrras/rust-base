@@ -48,14 +48,14 @@ jobs:
       matrix:
         app: ${{ fromJSON(needs.matrix.outputs.apps) }}
     env:
-      SYNC_TOKEN: ${{ secrets.SYNC_TOKEN }}
-      GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
       APP: ${{ matrix.app }}
     defaults:
       run:
         shell: bash
     steps:
       - name: Require SYNC_TOKEN
+        env:
+          SYNC_TOKEN: ${{ secrets.SYNC_TOKEN }}
         run: |
           if [ -z "$SYNC_TOKEN" ]; then
             echo "::error::Secret SYNC_TOKEN is not set. Add a fine-grained PAT with contents and pull-requests write on the apps."
@@ -79,6 +79,8 @@ jobs:
 
       - name: Open or update the sync PR
         env:
+          SYNC_TOKEN: ${{ secrets.SYNC_TOKEN }}
+          GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
           BRANCH: rust-base/sync
           TITLE: Sync shared files from rust-base
           SHA: ${{ github.sha }}

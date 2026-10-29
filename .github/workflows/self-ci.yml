@@ -31,7 +31,7 @@ jobs:
           node-version: 22
 
       - name: prettier
-        run: npx --yes prettier@3 --check .
+        run: npx --yes prettier@3.9.4 --check .
 
       - name: shellcheck
         run: shellcheck ci/scripts/*.sh
