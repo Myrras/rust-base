@@ -1,3 +1,4 @@
+# Canary for the apps: weekly, majors visible, github-actions included. The apps' synced config is calmer (sync/files/.github/dependabot.yml).
 version: 2
 updates:
   - package-ecosystem: github-actions

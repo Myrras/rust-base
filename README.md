@@ -105,7 +105,7 @@ This repo's own [`.github/rust-base.json`](.github/rust-base.json) lists every k
 
 Apps set `labels: ["release:patch", "dependencies"]` per ecosystem in `.github/dependabot.yml` (see [`examples/dependabot.yaml`](examples/dependabot.yaml) or this repo's own `.github/dependabot.yml`), so the release-label gate passes with `release:patch`. The changelog gate is skipped for Dependabot PRs (judged on the PR author). A deps-only merge has no CHANGELOG entry, so the release workflow finds nothing to release; the bumps ship with the next release.
 
-The npm entry ignores semver-major `typescript` updates: typescript-eslint doesn't support TypeScript 7 yet. Remove the `ignore` block when it does.
+The apps' config (`sync/files/.github/dependabot.yml`) is calm: cargo and npm only, monthly, minor/patch grouped per ecosystem, app-specific majors as separate PRs (one per dependency). Majors of the shared stack (React, Tauri, Vite, Vitest, ESLint, TypeScript and friends) are ignored as a bridge: rust-base decides them (this repo's Dependabot is the canary) and they later arrive via the shared package. Action pins live here. This repo's own Dependabot stays weekly with majors and github-actions visible: it is the canary.
 
 ### Windows checks and the `windows` label
 
@@ -207,7 +207,7 @@ src/                       # React frontend (presentation only)
 ci/                        # shared CI: common.just and scripts/ (see Shared CI)
 examples/                  # caller workflows for apps
 .github/workflows/         # reusable-*.yml, plus this repo's callers: ci, pr-checks, build, integration, self-ci
-.github/dependabot.yml     # weekly grouped updates: actions, cargo, npm
+.github/dependabot.yml     # weekly grouped updates: actions, cargo, npm (canary; apps get a monthly config)
 ```
 
 ### Prerequisites

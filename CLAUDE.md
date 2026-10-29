@@ -199,8 +199,12 @@ code and no NSIS-specific config yet.
   (the shared workflows set pnpm 10; a second version fails setup). Recipes CI
   calls (`test-integration`) must not depend on `common.just` recipes: in an
   app's CI the optional import resolves to nothing.
-- **Dependabot** (`.github/dependabot.yml`) opens weekly grouped PRs for
-  GitHub Actions, Cargo and npm.
+- **Dependabot:** this repo's `.github/dependabot.yml` is the canary (weekly,
+  majors visible, GitHub Actions, Cargo, npm). The apps get
+  `sync/files/.github/dependabot.yml`: Cargo and npm only, monthly, minor/patch
+  grouped, app-specific majors as separate PRs. Shared-stack majors are ignored
+  (a bridge until the shared package) and decided here, with this repo's own
+  Dependabot as the canary.
 - **Protected `main`** (optional, one-off setup per repo): the release job must
   push to `main`, which a ruleset requiring PRs would block (`GH013`); GitHub
   refuses the Actions app as a bypass actor on a user-owned repo (an org-owned repo can add the Actions app as a bypass actor instead), so
