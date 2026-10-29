@@ -1,0 +1,20 @@
+{
+  "ci": {
+    "rust-runner": "ubuntu-latest",
+    "windows-test-scope": "--workspace",
+    "extra-recipe": ""
+  },
+  "release": {
+    "title-prefix": "",
+    "require-deploy-key": false
+  },
+  "integration": {
+    "runner": "ubuntu-latest",
+    "apt-packages": "",
+    "setup-wsl": false,
+    "wsl-distro": "Ubuntu-24.04",
+    "wsl-packages": "",
+    "env": "",
+    "recipe": "test-integration"
+  }
+}

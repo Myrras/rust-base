@@ -21,6 +21,8 @@ All are `on: workflow_call` only. Every workflow takes `ci-repo` (string, defaul
 | `reusable-build.yml`       | `ci-repo` and `ci-ref` only                                                                                                                                                                                                                                                                                                                                                          | none                                                               | macOS + Windows matrix, installers (dmg, NSIS), uploads artifacts, attaches them to the GitHub Release on `refs/tags/v*`.                                                                        |
 | `reusable-integration.yml` | `runner` (default `ubuntu-latest`), `apt-packages` (default empty), `setup-wsl` (bool, default `false`), `wsl-distro` (default `Ubuntu-24.04`), `wsl-packages` (default empty; packages installed inside the WSL distro), `env` (default empty; extra `KEY=value` lines written to `GITHUB_ENV`, not for secrets), `recipe` (default `test-integration`, run from the repo justfile) | `INTEGRATION_TOKEN` (optional, exposed as env `INTEGRATION_TOKEN`) | Covers DB drivers, ssh, WSL and real-API tests.                                                                                                                                                  |
 
+The per-app inputs of `reusable-tauri-ci.yml`, `reusable-release.yml` and `reusable-integration.yml` default to empty (`false` for booleans) and fall back to the app's [`.github/rust-base.json`](#per-app-config-githubrust-basejson), then to the defaults above. A non-empty input still wins; a boolean input wins only when `true`. The `windows` input stays an input only.
+
 The standard names (`ci.yml`, `pr-checks.yml`, `build.yml`, `integration.yml`) in `.github/workflows/` are this repo's own callers. They call the local reusable workflows with `ci-repo: ${{ github.repository }}` and `ci-ref` set to the PR's head commit, so a PR tests its own changes. `ci.yml` has no release job: the template app is never released. `build.yml` is `workflow_dispatch` only, to test the build workflow by hand.
 
 ### ci/common.just
@@ -54,12 +56,50 @@ In an app's CI the `import?` resolves to nothing, because the path under `~` doe
 
 ### Caller setup
 
-Copy the matching file into the app's `.github/workflows/` and adjust the inputs:
+Every app runs the same four callers, kept in [`sync/files/.github/workflows/`](sync/files/.github/workflows/) and copied verbatim into each app:
 
-- [`examples/ci.yml`](examples/ci.yml): push to `main` + pull requests; calls the CI workflow, then the release workflow on push to `main`
-- [`examples/pr-checks.yml`](examples/pr-checks.yml): calls the PR checks workflow
-- [`examples/build.yml`](examples/build.yml): `workflow_dispatch`, calls the build workflow
-- [`examples/integration.yml`](examples/integration.yml): nightly cron + dispatch, calls the integration workflow
+- `ci.yml`: push to `main` + pull requests; calls the CI workflow, then the release workflow on push to `main`
+- `pr-checks.yml`: calls the PR checks workflow
+- `build.yml`: `workflow_dispatch`, calls the build workflow
+- `integration.yml`: nightly cron + dispatch, calls the integration workflow
+
+Rules:
+
+- **Identical callers.** The synced callers pin `@v1`, pass no `with:` and always pass the secrets `RELEASE_DEPLOY_KEY` and `INTEGRATION_TOKEN` explicitly (an unset secret is an empty string). Don't edit them in an app: the next sync overwrites them. Change them here, in `sync/files/`.
+- **Apps own `.github/rust-base.json`.** Whatever differs per app goes in that file. It is not synced; each app keeps its own.
+
+[`examples/`](examples/) shows the same callers with the optional `with:` inputs, for repos outside the sync.
+
+### Per-app config: `.github/rust-base.json`
+
+Read by each reusable workflow's `config` job from the caller repo at the caller's ref. Every key is optional; a missing file or key means the default. An empty string counts as unset. Unknown keys log a warning; a value of the wrong type fails the run.
+
+| Key                              | Type   | Default            | Effect                                                                 |
+| -------------------------------- | ------ | ------------------ | ---------------------------------------------------------------------- |
+| `ci.rust-runner`                 | string | `ubuntu-latest`    | Runner for the Rust job                                                |
+| `ci.windows-test-scope`          | string | `--workspace`      | `cargo test` arguments on Windows (e.g. `-p my-core`)                  |
+| `ci.extra-recipe`                | string | none               | Recipe from the app's justfile, run after the rust recipe              |
+| `release.title-prefix`           | string | none               | Release title and tag message prefix (`MyApp` → `MyApp v1.2.3`)        |
+| `release.require-deploy-key`     | bool   | `false`            | Fail instead of warn without `RELEASE_DEPLOY_KEY`                      |
+| `integration.runner`             | string | `ubuntu-latest`    | Runner for the integration job                                         |
+| `integration.apt-packages`       | string | none               | Space-separated apt packages (Linux)                                   |
+| `integration.setup-wsl`          | bool   | `false`            | Install a WSL distro (Windows)                                         |
+| `integration.wsl-distro`         | string | `Ubuntu-24.04`     | WSL distro to install                                                  |
+| `integration.wsl-packages`       | string | none               | Packages installed inside the WSL distro                               |
+| `integration.env`                | string | none               | Extra `KEY=value` lines (`\n`-separated) for `GITHUB_ENV`; not secrets |
+| `integration.recipe`             | string | `test-integration` | Recipe in the app's justfile that runs the tests                       |
+
+Example (an app with a core crate and a protected `main`):
+
+```json
+{
+  "ci": { "windows-test-scope": "-p my-core" },
+  "release": { "title-prefix": "MyApp", "require-deploy-key": true },
+  "integration": { "apt-packages": "libdbus-1-dev pkg-config" }
+}
+```
+
+This repo's own [`.github/rust-base.json`](.github/rust-base.json) lists every key with its default.
 
 ### Dependabot
 
@@ -131,7 +171,7 @@ Don't require `ci / frontend`, `ci / rust` or `ci / windows`: `ci-ok` aggregates
 - **Changelog:** `CHANGELOG.md` must have a `## [Unreleased]` heading; a release without it fails.
 - **Release bump:** the highest of release:patch, release:minor and release:major across all PRs since the last tag.
 - **Labels:** `release:patch`, `release:minor`, `release:major`, `no-release` and `windows` must exist in the repo. Only the `release:` names count as bumps: Dependabot applies bare `major`/`minor`/`patch` labels itself when they exist, and those are ignored.
-- **Linux Rust job:** the workspace must build and pass `cargo test --workspace` on `ubuntu-latest` with the packages installed by `reusable-tauri-ci.yml` (WebKitGTK 4.1, libsoup 3, JavaScriptCoreGTK 4.1, appindicator, librsvg, libxdo, OpenSSL, D-Bus, pkg-config). Gate tests that need a desktop session or macOS behind `cfg`, or set `rust-runner: macos-latest`.
+- **Linux Rust job:** the workspace must build and pass `cargo test --workspace` on `ubuntu-latest` with the packages installed by `reusable-tauri-ci.yml` (WebKitGTK 4.1, libsoup 3, JavaScriptCoreGTK 4.1, appindicator, librsvg, libxdo, OpenSSL, D-Bus, pkg-config). Gate tests that need a desktop session or macOS behind `cfg`, or set `ci.rust-runner` to `macos-latest` in `.github/rust-base.json`.
 
 ### Versioning
 
@@ -182,7 +222,7 @@ just build          # shared recipe: production desktop bundle
 2. Clone rust-base once and link it, so the app's justfile finds the shared recipes: `ln -s /path/to/rust-base ~/.rust-base`.
 3. In the new repo:
    - Replace `import 'ci/common.just'` in the `justfile` with `import? '~/.rust-base/ci/common.just'`, and delete `ci/`, `examples/` and the `reusable-*.yml` and `self-ci.yml` workflows.
-   - Replace the callers in `.github/workflows/` with the ones from [`examples/`](examples/) (they pin `@v1` and add the release job).
+   - Replace the callers in `.github/workflows/` with the synced ones from [`sync/files/.github/workflows/`](sync/files/.github/workflows/) (they pin `@v1` and add the release job), and put the app's settings in `.github/rust-base.json` (see [Per-app config](#per-app-config-githubrust-basejson)).
    - Replace `README.md` and the shared-CI parts of `CLAUDE.md` with your app's own.
 4. Rename the crates (`app-core`, `app`), the product name / bundle identifier in `src-tauri/tauri.conf.json` (`com.example.app`), and the package names in `Cargo.toml` / `package.json`.
 5. Replace the placeholder icons in `src-tauri/icons/` with your own: `pnpm tauri icon path/to/icon.png`.

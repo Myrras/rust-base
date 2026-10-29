@@ -14,6 +14,10 @@ name: Integration
 # Container-backed tests (testcontainers) need nothing extra: Docker is
 # preinstalled on the ubuntu runners.
 #
+# Per-app settings come from the `integration` section of the caller repo's
+# `.github/rust-base.json` (the `config` job). A non-empty input (for setup-wsl:
+# true) overrides the file; a missing file or key means the default.
+#
 # `ci-repo` and `ci-ref` are accepted for uniformity with the other shared
 # workflows. This workflow uses no shared files from rust-base, so they are
 # currently unused.
@@ -28,36 +32,39 @@ on:
         description: Repository holding the shared files (reserved; no shared files are used here).
         type: string
         default: RobbieMinderhoud/rust-base
+      # Every input falls back to the same key under `integration` in
+      # .github/rust-base.json, then to the default named here.
       runner:
-        description: Runner label for the job.
+        description: Runner label for the job. Default `ubuntu-latest`.
         type: string
-        default: ubuntu-latest
+        default: ""
       apt-packages:
-        description: Space-separated apt packages to install (Linux runners only).
+        description: Space-separated apt packages to install (Linux runners only). Default none.
         type: string
         default: ""
       setup-wsl:
-        description: Install a WSL distro with Vampire/setup-wsl (Windows runners only).
+        description: Install a WSL distro with Vampire/setup-wsl (Windows runners only). Default off.
         type: boolean
         default: false
       wsl-distro:
-        description: WSL distribution to install when setup-wsl is true.
+        description: WSL distribution to install when setup-wsl is on. Default `Ubuntu-24.04`.
         type: string
-        default: Ubuntu-24.04
+        default: ""
       wsl-packages:
-        description: Space-separated packages to install inside the WSL distro (e.g. "git procps").
+        description: Space-separated packages to install inside the WSL distro (e.g. "git procps"). Default none.
         type: string
         default: ""
       env:
         description: >-
           Extra environment variables, one KEY=value per line, written to
-          GITHUB_ENV before the tests run. Not for secrets (inputs are not masked).
+          GITHUB_ENV before the tests run. Not for secrets (inputs are not
+          masked). Default none.
         type: string
         default: ""
       recipe:
-        description: Recipe in the calling repo's justfile that runs the integration tests.
+        description: Recipe in the calling repo's justfile that runs the integration tests. Default `test-integration`.
         type: string
-        default: test-integration
+        default: ""
     secrets:
       INTEGRATION_TOKEN:
         description: Token for tests that talk to a real external API; exposed as env INTEGRATION_TOKEN.
@@ -71,9 +78,105 @@ permissions:
   contents: read
 
 jobs:
+  # Reads the caller repo's .github/rust-base.json (at the caller's ref) once,
+  # so the values can set `runs-on` and job conditions. Per key: a non-empty
+  # input wins, then the file, then the default. A boolean is true when the
+  # input or the file says true. Unknown keys warn; a wrong type fails the run.
+  config:
+    name: Read .github/rust-base.json
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      runner: ${{ steps.resolve.outputs.runner }}
+      apt-packages: ${{ steps.resolve.outputs.apt-packages }}
+      setup-wsl: ${{ steps.resolve.outputs.setup-wsl }}
+      wsl-distro: ${{ steps.resolve.outputs.wsl-distro }}
+      wsl-packages: ${{ steps.resolve.outputs.wsl-packages }}
+      env: ${{ steps.resolve.outputs.env }}
+      recipe: ${{ steps.resolve.outputs.recipe }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/rust-base.json
+          sparse-checkout-cone-mode: false
+
+      - name: Resolve settings
+        id: resolve
+        env:
+          SECTION: integration
+          # key: [type, default]
+          SPEC: >-
+            {"runner": ["string", "ubuntu-latest"],
+            "apt-packages": ["string", ""],
+            "setup-wsl": ["boolean", false],
+            "wsl-distro": ["string", "Ubuntu-24.04"],
+            "wsl-packages": ["string", ""],
+            "env": ["string", ""],
+            "recipe": ["string", "test-integration"]}
+          INPUTS: ${{ toJSON(inputs) }}
+        run: |
+          file=.github/rust-base.json
+          cfg='{}'
+          if [ -f "$file" ]; then
+            if ! cfg=$(jq -c . "$file") || [ "$(jq -r type <<< "$cfg")" != object ]; then
+              echo "::error file=$file::$file must hold a single JSON object."
+              exit 1
+            fi
+          else
+            echo "No $file in $GITHUB_REPOSITORY; using the defaults."
+          fi
+          result=$(jq -n -c --argjson cfg "$cfg" --argjson spec "$SPEC" \
+            --argjson inputs "$INPUTS" --arg section "$SECTION" '
+            (if $cfg | has($section) then $cfg[$section] else {} end) as $s
+            | if ($s | type) != "object" then
+                {warnings: [], values: {},
+                 errors: ["\($section) must be an object, got \($s | type)"]}
+              else
+                {
+                  warnings: [
+                    (($cfg | keys) - ["ci", "release", "integration"] | .[]
+                      | "unknown section \(.) (ignored)"),
+                    (($s | keys) - ($spec | keys) | .[]
+                      | "unknown key \($section).\(.) (ignored)")
+                  ],
+                  errors: [
+                    $spec | to_entries[] | .key as $k | .value[0] as $t
+                    | select(($s | has($k)) and ($s[$k] | type) != $t)
+                    | "\($section).\($k) must be a \($t), got \($s[$k] | type)"
+                  ],
+                  values: ($spec | with_entries(
+                    .key as $k | .value[0] as $t | .value[1] as $default
+                    | .value = (
+                        if $t == "boolean" then ($inputs[$k] == true or $s[$k] == true)
+                        elif ($inputs[$k] // "") != "" then $inputs[$k]
+                        elif ($s[$k] // "") != "" then $s[$k]
+                        else $default end)))
+                }
+              end')
+          while IFS= read -r msg; do
+            echo "::warning file=$file::$msg"
+          done < <(jq -r '.warnings[]' <<< "$result")
+          errors=$(jq -r '.errors[]' <<< "$result")
+          if [ -n "$errors" ]; then
+            while IFS= read -r msg; do
+              echo "::error file=$file::$msg"
+            done <<< "$errors"
+            exit 1
+          fi
+          delim="EOF_$(openssl rand -hex 16)"
+          while IFS= read -r key; do
+            value=$(jq -r --arg k "$key" '.values[$k]' <<< "$result")
+            printf '%s: %s\n' "$key" "$value"
+            printf '%s<<%s\n%s\n%s\n' "$key" "$delim" "$value" "$delim" >> "$GITHUB_OUTPUT"
+          done < <(jq -r '.values | keys[]' <<< "$result")
+
   integration:
     name: Integration tests
-    runs-on: ${{ inputs.runner }}
+    needs: config
+    runs-on: ${{ needs.config.outputs.runner }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -81,25 +184,25 @@ jobs:
           persist-credentials: false
 
       - name: Install apt packages
-        if: runner.os == 'Linux' && inputs.apt-packages != ''
+        if: runner.os == 'Linux' && needs.config.outputs.apt-packages != ''
         env:
-          APT_PACKAGES: ${{ inputs.apt-packages }}
+          APT_PACKAGES: ${{ needs.config.outputs.apt-packages }}
         run: |
           read -r -a packages <<< "$APT_PACKAGES"
           sudo apt-get update
           sudo apt-get install -y "${packages[@]}"
 
       - name: Set up WSL
-        if: inputs.setup-wsl
+        if: needs.config.outputs.setup-wsl == 'true'
         uses: Vampire/setup-wsl@4c48163d9f981914dd8caa0fc335fe19cca5bff4 # v7.2.0
         with:
-          distribution: ${{ inputs.wsl-distro }}
-          additional-packages: ${{ inputs.wsl-packages }}
+          distribution: ${{ needs.config.outputs.wsl-distro }}
+          additional-packages: ${{ needs.config.outputs.wsl-packages }}
 
       - name: Export extra environment
-        if: inputs.env != ''
+        if: needs.config.outputs.env != ''
         env:
-          EXTRA_ENV: ${{ inputs.env }}
+          EXTRA_ENV: ${{ needs.config.outputs.env }}
         run: |
           while IFS= read -r line || [ -n "$line" ]; do
             line="${line%$'\r'}"
@@ -107,7 +210,7 @@ jobs:
               '' | '#'*) continue ;;
             esac
             if [[ ! "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then
-              echo "::error::env input: expected KEY=value, got: ${line%%=*}"
+              echo "::error::env: expected KEY=value, got: ${line%%=*}"
               exit 1
             fi
             printf '%s\n' "$line" >> "$GITHUB_ENV"
@@ -129,6 +232,6 @@ jobs:
 
       - name: Run integration tests
         env:
-          RECIPE: ${{ inputs.recipe }}
+          RECIPE: ${{ needs.config.outputs.recipe }}
           INTEGRATION_TOKEN: ${{ secrets.INTEGRATION_TOKEN }}
         run: just "$RECIPE"

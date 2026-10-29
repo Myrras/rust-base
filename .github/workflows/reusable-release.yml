@@ -12,6 +12,11 @@
 # Caller job (needs its CI job, runs only on push to main):
 #   permissions: { contents: write, pull-requests: read, actions: write }
 #   secrets: { RELEASE_DEPLOY_KEY: ${{ secrets.RELEASE_DEPLOY_KEY }} }
+#
+# Per-app settings come from the `release` section of the caller repo's
+# `.github/rust-base.json` (the `config` job). A non-empty input (for
+# require-deploy-key: true) overrides the file; a missing file or key means
+# the default.
 name: release
 
 on:
@@ -28,12 +33,16 @@ on:
       title-prefix:
         description: >-
           Prefix for the GitHub Release title and the tag message, joined with a
-          space (`MyApp` → `MyApp v1.2.3`). Empty: title `v1.2.3`, tag message
+          space (`MyApp` → `MyApp v1.2.3`). Empty: `release.title-prefix` from
+          .github/rust-base.json; empty there too: title `v1.2.3`, tag message
           `Release v1.2.3`.
         type: string
         default: ""
       require-deploy-key:
-        description: Fail instead of warn when RELEASE_DEPLOY_KEY is not set (main is protected).
+        description: >-
+          Fail instead of warn when RELEASE_DEPLOY_KEY is not set (main is
+          protected). Also on when `release.require-deploy-key` in
+          .github/rust-base.json is true.
         type: boolean
         default: false
     secrets:
@@ -52,7 +61,94 @@ defaults:
     shell: bash
 
 jobs:
+  # Reads the caller repo's .github/rust-base.json (at the caller's ref) once,
+  # so the values can set `runs-on` and job conditions. Per key: a non-empty
+  # input wins, then the file, then the default. A boolean is true when the
+  # input or the file says true. Unknown keys warn; a wrong type fails the run.
+  config:
+    name: Read .github/rust-base.json
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      title-prefix: ${{ steps.resolve.outputs.title-prefix }}
+      require-deploy-key: ${{ steps.resolve.outputs.require-deploy-key }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/rust-base.json
+          sparse-checkout-cone-mode: false
+
+      - name: Resolve settings
+        id: resolve
+        env:
+          SECTION: release
+          # key: [type, default]
+          SPEC: >-
+            {"title-prefix": ["string", ""],
+            "require-deploy-key": ["boolean", false]}
+          INPUTS: ${{ toJSON(inputs) }}
+        run: |
+          file=.github/rust-base.json
+          cfg='{}'
+          if [ -f "$file" ]; then
+            if ! cfg=$(jq -c . "$file") || [ "$(jq -r type <<< "$cfg")" != object ]; then
+              echo "::error file=$file::$file must hold a single JSON object."
+              exit 1
+            fi
+          else
+            echo "No $file in $GITHUB_REPOSITORY; using the defaults."
+          fi
+          result=$(jq -n -c --argjson cfg "$cfg" --argjson spec "$SPEC" \
+            --argjson inputs "$INPUTS" --arg section "$SECTION" '
+            (if $cfg | has($section) then $cfg[$section] else {} end) as $s
+            | if ($s | type) != "object" then
+                {warnings: [], values: {},
+                 errors: ["\($section) must be an object, got \($s | type)"]}
+              else
+                {
+                  warnings: [
+                    (($cfg | keys) - ["ci", "release", "integration"] | .[]
+                      | "unknown section \(.) (ignored)"),
+                    (($s | keys) - ($spec | keys) | .[]
+                      | "unknown key \($section).\(.) (ignored)")
+                  ],
+                  errors: [
+                    $spec | to_entries[] | .key as $k | .value[0] as $t
+                    | select(($s | has($k)) and ($s[$k] | type) != $t)
+                    | "\($section).\($k) must be a \($t), got \($s[$k] | type)"
+                  ],
+                  values: ($spec | with_entries(
+                    .key as $k | .value[0] as $t | .value[1] as $default
+                    | .value = (
+                        if $t == "boolean" then ($inputs[$k] == true or $s[$k] == true)
+                        elif ($inputs[$k] // "") != "" then $inputs[$k]
+                        elif ($s[$k] // "") != "" then $s[$k]
+                        else $default end)))
+                }
+              end')
+          while IFS= read -r msg; do
+            echo "::warning file=$file::$msg"
+          done < <(jq -r '.warnings[]' <<< "$result")
+          errors=$(jq -r '.errors[]' <<< "$result")
+          if [ -n "$errors" ]; then
+            while IFS= read -r msg; do
+              echo "::error file=$file::$msg"
+            done <<< "$errors"
+            exit 1
+          fi
+          delim="EOF_$(openssl rand -hex 16)"
+          while IFS= read -r key; do
+            value=$(jq -r --arg k "$key" '.values[$k]' <<< "$result")
+            printf '%s: %s\n' "$key" "$value"
+            printf '%s<<%s\n%s\n%s\n' "$key" "$delim" "$value" "$delim" >> "$GITHUB_OUTPUT"
+          done < <(jq -r '.values | keys[]' <<< "$result")
+
   release:
+    needs: config
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -71,13 +167,13 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       # A repo with an unprotected main can release with GITHUB_TOKEN, so a
-      # missing key only warns unless the caller sets require-deploy-key. On a
+      # missing key only warns unless require-deploy-key is on. On a
       # protected main a GITHUB_TOKEN push is rejected with an opaque GH013, and
       # this message names the fix.
       - name: Deploy key configured?
         env:
           HAS_KEY: ${{ secrets.RELEASE_DEPLOY_KEY != '' }}
-          REQUIRE_KEY: ${{ inputs.require-deploy-key }}
+          REQUIRE_KEY: ${{ needs.config.outputs.require-deploy-key }}
         run: |
           fix="ssh-keygen -t ed25519 -N '' -C release -f release_key; gh repo deploy-key add release_key.pub --allow-write --title 'CI release'; gh secret set RELEASE_DEPLOY_KEY < release_key; delete both key files; add DeployKey as a bypass actor on main's ruleset; pass RELEASE_DEPLOY_KEY to reusable-release.yml under the caller job's secrets (no secrets: inherit)."
           if [ "$HAS_KEY" != "true" ]; then
@@ -198,7 +294,7 @@ jobs:
       - name: Release title
         if: steps.pending.outputs.release == 'true'
         env:
-          TITLE_PREFIX: ${{ inputs.title-prefix }}
+          TITLE_PREFIX: ${{ needs.config.outputs.title-prefix }}
         run: |
           if [ -n "$TITLE_PREFIX" ]; then
             title="$TITLE_PREFIX $TAG"
