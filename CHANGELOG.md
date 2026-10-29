@@ -18,6 +18,11 @@ when it merges.
   The template app uses it; apps migrate in a later step.
 - Licensed under MIT.
 
+### Security
+
+- `SECURITY.md` synced to the apps; least-privilege tokens in the sync and
+  build workflows; pinned prettier in self-CI.
+
 ### Changed
 
 - Config package 0.1.1: usage docs on npm (first CI publish via trusted publishing).

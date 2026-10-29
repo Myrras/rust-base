@@ -182,7 +182,7 @@ Apps pin `@v2`. The `v2` tag is moved to the latest compatible commit. Breaking 
 
 `.github/workflows/sync.yml` pushes the payload in `sync/` to every app in `sync/apps.txt` (one `owner/repo` per line). It runs on a push to `main` that touches `sync/**` or `ci/scripts/sync-apply.sh`, and on `workflow_dispatch`.
 
-- `sync/files/<path>` is copied verbatim to `<path>` in each app, overwriting it. Only files listed there are synced. This includes `.github/CODEOWNERS` (`* @Myrras`) and the caller workflows in `.github/workflows/`.
+- `sync/files/<path>` is copied verbatim to `<path>` in each app, overwriting it. Only files listed there are synced. This includes `.github/CODEOWNERS` (`* @Myrras`), `SECURITY.md` and the caller workflows in `.github/workflows/`.
 - `sync/CLAUDE.block.md` goes into the app's `CLAUDE.md`, between `<!-- rust-base:start -->` and `<!-- rust-base:end -->`. Without the markers the block is inserted after the first `# ` heading paragraph. Text outside the markers is never touched.
 - Per app, `ci/scripts/sync-apply.sh` does the work. If nothing differs, nothing happens. Otherwise the workflow force-pushes one commit to the branch `rust-base/sync` and opens or updates the PR "Sync shared files from rust-base" with the label `no-release`. The body lists the changed files and the rust-base commit.
 - **Secret:** `SYNC_TOKEN`, a fine-grained PAT with contents and pull-requests write on all apps. The workflow's own token is read-only. Without the secret the run fails with an error.
