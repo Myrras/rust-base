@@ -16,6 +16,8 @@ when it merges.
 - Merged the shared CI (formerly ci-workflows) into this template; reusable
   workflows are now `reusable-*.yml`, shared recipes and scripts live in `ci/`.
   Apps pin `@v2`; `v1` (the old ci-workflows layout) is frozen.
+- Apps: Dependabot runs monthly with minor/patch grouped; majors are ignored and
+  handled via rust-base.
 
 ## [0.2.0] - 2026-10-28
 
