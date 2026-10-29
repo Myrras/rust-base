@@ -16,7 +16,7 @@ binaries. The ESLint plugins (`@eslint/js`, `typescript-eslint`,
 `eslint-plugin-react-hooks`, `eslint-plugin-react-refresh`, `globals`) come with
 this package; the app does not declare them.
 
-## Use
+## Usage
 
 `eslint.config.js`:
 
@@ -67,3 +67,7 @@ SemVer, independent of the rust-base CI tags (`v2`). A new major of ESLint,
 Prettier or TypeScript in the peer ranges, or a new lint rule that fails
 existing code, is a major. Releases are tagged `config-vX.Y.Z` and published
 from CI with npm provenance.
+
+## License
+
+MIT.

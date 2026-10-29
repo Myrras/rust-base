@@ -1,6 +1,6 @@
 {
   "name": "@myrras/rust-base-config",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "license": "MIT",
   "description": "Shared ESLint, Prettier and TypeScript config for rust-base apps (Tauri 2 + React + Vite).",
   "type": "module",

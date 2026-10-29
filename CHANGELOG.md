@@ -20,6 +20,7 @@ when it merges.
 
 ### Changed
 
+- Config package 0.1.1: usage docs on npm (first CI publish via trusted publishing).
 - Apps: the sync now delivers the config package pointer files (`eslint.config.js`,
   `.prettierrc.json`, `tsconfig.json`, `tsconfig.node.json`) and Dependabot no
   longer ignores majors of the ESLint plugins that moved into the package.
