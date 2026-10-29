@@ -24,9 +24,9 @@ importers:
         specifier: ^5.0.14
         version: 5.0.14(@types/react@19.2.17)(react@19.2.7)
     devDependencies:
-      '@eslint/js':
-        specifier: ^9.18.0
-        version: 9.39.4
+      '@myrras/rust-base-config':
+        specifier: workspace:*
+        version: link:packages/config
       '@tauri-apps/cli':
         specifier: ^2
         version: 2.11.4
@@ -51,15 +51,6 @@ importers:
       eslint:
         specifier: ^9.18.0
         version: 9.39.4
-      eslint-plugin-react-hooks:
-        specifier: ^5.1.0
-        version: 5.2.0(eslint@9.39.4)
-      eslint-plugin-react-refresh:
-        specifier: ^0.4.18
-        version: 0.4.26(eslint@9.39.4)
-      globals:
-        specifier: ^15.14.0
-        version: 15.15.0
       jsdom:
         specifier: ^25.0.1
         version: 25.0.1
@@ -69,15 +60,39 @@ importers:
       typescript:
         specifier: ~5.8.3
         version: 5.8.3
-      typescript-eslint:
-        specifier: ^8.20.0
-        version: 8.62.1(eslint@9.39.4)(typescript@5.8.3)
       vite:
         specifier: ^7.0.4
         version: 7.3.6
       vitest:
         specifier: ^4.1.9
         version: 4.1.10(jsdom@25.0.1)(vite@7.3.6)
+
+  packages/config:
+    dependencies:
+      '@eslint/js':
+        specifier: ^9.39.4
+        version: 9.39.4
+      eslint:
+        specifier: ^9.18.0
+        version: 9.39.4
+      eslint-plugin-react-hooks:
+        specifier: ^5.2.0
+        version: 5.2.0(eslint@9.39.4)
+      eslint-plugin-react-refresh:
+        specifier: ^0.4.26
+        version: 0.4.26(eslint@9.39.4)
+      globals:
+        specifier: ^15.15.0
+        version: 15.15.0
+      prettier:
+        specifier: ^3.4.2
+        version: 3.9.4
+      typescript:
+        specifier: ^5.8.3
+        version: 5.8.3
+      typescript-eslint:
+        specifier: ^8.62.1
+        version: 8.62.1(eslint@9.39.4)(typescript@5.8.3)
 
 packages:
 
