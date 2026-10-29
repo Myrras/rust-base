@@ -3,6 +3,7 @@
 The base for cross-platform desktop apps in **Rust + Tauri 2 + React + TypeScript + Vite**. One repo, two roles:
 
 - **[Shared CI](#shared-ci):** reusable GitHub Actions workflows (`.github/workflows/reusable-*.yml`), shared `just` recipes (`ci/common.just`) and release scripts (`ci/scripts/`). Apps keep thin caller workflows and pin this repo at `@v2`.
+- **[Shared config package](#shared-config-package):** `@myrras/rust-base-config` on npm (`packages/config/`), the apps' ESLint, Prettier and TypeScript config.
 - **[Template app](#template-app):** the repo root is a working Tauri app with the shared skeleton and conventions, and one tiny sample feature (greet + notes) wired end to end so `just dev` and `just ci` work out of the box. New apps [start from this template](#start-a-new-app-from-this-template).
 
 Every PR here runs the shared CI on the template app: this repo's own callers use the local reusable workflows and the PR's own `ci/` files. See `CLAUDE.md` for the conventions.
@@ -193,6 +194,34 @@ Apps pin `@v2`. The `v2` tag is moved to the latest compatible commit. Breaking 
 
 `.github/workflows/self-ci.yml` runs actionlint (workflows and `examples/*.yml`), shellcheck, the `ci/scripts/*.test.sh` tests, `just --fmt --check` (root `justfile` and `ci/common.just`) and a prettier check of the repo.
 
+## Shared config package
+
+`packages/config/` is the npm package `@myrras/rust-base-config`: the frontend tooling config every app shares. The repo root is a pnpm workspace and the template app uses the package via `workspace:*`, so `ci / frontend` tests it on every PR.
+
+Exports:
+
+- `./eslint`: the ESLint flat-config array
+- `./prettier`: the Prettier options
+- `./tsconfig.json`, `./tsconfig.node.json`: `compilerOptions` only; `include` and `references` stay in the app
+
+Dependencies: `eslint`, `prettier` and `typescript` are peer dependencies; an app keeps them as its own devDependencies (pnpm only runs binaries of direct dependencies), and the peer ranges guard their majors. The ESLint plugins (`@eslint/js`, `typescript-eslint`, `eslint-plugin-react-hooks`, `eslint-plugin-react-refresh`, `globals`) are dependencies of the package. Vite, Vitest and the test libraries stay in the app.
+
+In an app:
+
+1. `pnpm add -D @myrras/rust-base-config` and remove the five ESLint plugins above from `package.json`.
+2. Replace the config files with pointers (examples in [`packages/config/README.md`](packages/config/README.md)): `eslint.config.js` re-exports `@myrras/rust-base-config/eslint`, `.prettierrc.json` is the string `"@myrras/rust-base-config/prettier"`, and `tsconfig.json` / `tsconfig.node.json` `extends` the package's files.
+3. `.prettierignore` stays the app's own (Prettier has no shared ignore file).
+
+The template's own `.prettierrc.json` points to `./packages/config/prettier.json` by path, because self-CI runs Prettier without `pnpm install`.
+
+Releases are independent of the CI tags (`v2`); SemVer, tags `config-vX.Y.Z`:
+
+1. Bump `version` in `packages/config/package.json` in a PR and merge it.
+2. Tag the merge commit `config-vX.Y.Z` and push the tag (owner only).
+3. `.github/workflows/publish-config.yml` checks that the tag matches `package.json` and runs `npm publish --provenance --access public` through npm trusted publishing (OIDC, no token). `gh workflow run publish-config.yml --ref config-vX.Y.Z` re-runs it for an existing tag.
+
+Trusted publishing can only be configured for a package that already exists, so the first version is published by hand (`npm publish --access public` in `packages/config/`). After that, add `RobbieMinderhoud/rust-base` with workflow `publish-config.yml` as the trusted publisher in the package's npm settings.
+
 ## Template app
 
 ### Layout
@@ -206,6 +235,7 @@ src-tauri/                 # thin Tauri IPC adapter over app-core
 src/                       # React frontend (presentation only)
 ci/                        # shared CI: common.just and scripts/ (see Shared CI)
 examples/                  # caller workflows for apps
+packages/config/           # @myrras/rust-base-config: shared ESLint, Prettier and tsconfig (npm)
 .github/workflows/         # reusable-*.yml, plus this repo's callers: ci, pr-checks, build, integration, self-ci
 .github/dependabot.yml     # weekly grouped updates: actions, cargo, npm (canary; apps get a monthly config)
 ```

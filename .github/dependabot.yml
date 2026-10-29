@@ -18,7 +18,8 @@ updates:
       cargo:
         patterns: ["*"]
   - package-ecosystem: npm
-    directory: /
+    # The template app and the shared config package (pnpm workspace, one lockfile).
+    directories: ["/", "/packages/config"]
     schedule:
       interval: weekly
     labels: ["release:patch", "dependencies"]

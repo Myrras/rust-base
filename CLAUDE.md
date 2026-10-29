@@ -225,6 +225,21 @@ code and no NSIS-specific config yet.
 - **Never bump the version or create a tag by hand**; `just version` is for
   emergencies only.
 
+## Shared config package (`packages/config/`)
+
+`@myrras/rust-base-config` (ESLint, Prettier, tsconfig) is a public interface for
+the apps, like the shared CI. Details in `README.md`.
+
+- **Version bump required:** any change to the published files or dependencies of
+  `packages/config/` bumps `version` in `packages/config/package.json` in the same PR.
+- **Major** for a breaking change: a new or stricter rule that fails existing app
+  code, a removed export, or a raised peer range (a new major of ESLint, Prettier
+  or TypeScript). Minor for new exports or opt-in options; patch otherwise.
+- **Release:** tag `config-vX.Y.Z` on `main` (owner only, like every tag);
+  `publish-config.yml` publishes it. Its version is independent of `v2`.
+- **No tokens:** publishing uses npm trusted publishing (OIDC) only. Never add an
+  `NPM_TOKEN` secret or an `_authToken` to the repo.
+
 ## Shared CI (`ci/`, `reusable-*.yml`)
 
 The apps depend on these files, so treat them as a public interface. The full
