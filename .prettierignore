@@ -13,3 +13,5 @@ pnpm-lock.yaml
 *.json
 *.toml
 *.svg
+# The sync payload is format-checked in the apps, where the package resolves.
+sync/files
