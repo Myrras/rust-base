@@ -11,6 +11,10 @@
 #
 # The check recipes live in ci/common.just, fetched from `ci-repo` at `ci-ref`
 # (checked out to `.ci`, then moved to `$RUNNER_TEMP/rust-base`).
+#
+# Per-app settings come from the `ci` section of the caller repo's
+# `.github/rust-base.json` (the `config` job). A non-empty input overrides the
+# file; a missing file or key means the default.
 name: Tauri CI
 
 on:
@@ -25,9 +29,12 @@ on:
         type: string
         default: RobbieMinderhoud/rust-base
       rust-runner:
-        description: Runner for the Rust job. On Linux the Tauri system packages are installed first.
+        description: >-
+          Runner for the Rust job. On Linux the Tauri system packages are
+          installed first. Empty: `ci.rust-runner` from .github/rust-base.json,
+          else `ubuntu-latest`.
         type: string
-        default: ubuntu-latest
+        default: ""
       windows:
         description: >-
           When to run the Rust checks on windows-latest: `auto` (every event
@@ -36,11 +43,15 @@ on:
         type: string
         default: auto
       windows-test-scope:
-        description: Arguments for `cargo test` on Windows (e.g. `-p my-core`).
+        description: >-
+          Arguments for `cargo test` on Windows (e.g. `-p my-core`). Empty:
+          `ci.windows-test-scope` from .github/rust-base.json, else `--workspace`.
         type: string
-        default: --workspace
+        default: ""
       extra-recipe:
-        description: Recipe from the caller's justfile to run after the rust recipe, on the rust runner.
+        description: >-
+          Recipe from the caller's justfile to run after the rust recipe, on the
+          rust runner. Empty: `ci.extra-recipe` from .github/rust-base.json, else none.
         type: string
         default: ""
 
@@ -52,6 +63,93 @@ permissions:
   contents: read
 
 jobs:
+  # Reads the caller repo's .github/rust-base.json (at the caller's ref) once,
+  # so the values can set `runs-on` and job conditions. Per key: a non-empty
+  # input wins, then the file, then the default. A boolean is true when the
+  # input or the file says true. Unknown keys warn; a wrong type fails the run.
+  config:
+    name: Read .github/rust-base.json
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      rust-runner: ${{ steps.resolve.outputs.rust-runner }}
+      windows-test-scope: ${{ steps.resolve.outputs.windows-test-scope }}
+      extra-recipe: ${{ steps.resolve.outputs.extra-recipe }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/rust-base.json
+          sparse-checkout-cone-mode: false
+
+      - name: Resolve settings
+        id: resolve
+        env:
+          SECTION: ci
+          # key: [type, default]
+          SPEC: >-
+            {"rust-runner": ["string", "ubuntu-latest"],
+            "windows-test-scope": ["string", "--workspace"],
+            "extra-recipe": ["string", ""]}
+          INPUTS: ${{ toJSON(inputs) }}
+        run: |
+          file=.github/rust-base.json
+          cfg='{}'
+          if [ -f "$file" ]; then
+            if ! cfg=$(jq -c . "$file") || [ "$(jq -r type <<< "$cfg")" != object ]; then
+              echo "::error file=$file::$file must hold a single JSON object."
+              exit 1
+            fi
+          else
+            echo "No $file in $GITHUB_REPOSITORY; using the defaults."
+          fi
+          result=$(jq -n -c --argjson cfg "$cfg" --argjson spec "$SPEC" \
+            --argjson inputs "$INPUTS" --arg section "$SECTION" '
+            (if $cfg | has($section) then $cfg[$section] else {} end) as $s
+            | if ($s | type) != "object" then
+                {warnings: [], values: {},
+                 errors: ["\($section) must be an object, got \($s | type)"]}
+              else
+                {
+                  warnings: [
+                    (($cfg | keys) - ["ci", "release", "integration"] | .[]
+                      | "unknown section \(.) (ignored)"),
+                    (($s | keys) - ($spec | keys) | .[]
+                      | "unknown key \($section).\(.) (ignored)")
+                  ],
+                  errors: [
+                    $spec | to_entries[] | .key as $k | .value[0] as $t
+                    | select(($s | has($k)) and ($s[$k] | type) != $t)
+                    | "\($section).\($k) must be a \($t), got \($s[$k] | type)"
+                  ],
+                  values: ($spec | with_entries(
+                    .key as $k | .value[0] as $t | .value[1] as $default
+                    | .value = (
+                        if $t == "boolean" then ($inputs[$k] == true or $s[$k] == true)
+                        elif ($inputs[$k] // "") != "" then $inputs[$k]
+                        elif ($s[$k] // "") != "" then $s[$k]
+                        else $default end)))
+                }
+              end')
+          while IFS= read -r msg; do
+            echo "::warning file=$file::$msg"
+          done < <(jq -r '.warnings[]' <<< "$result")
+          errors=$(jq -r '.errors[]' <<< "$result")
+          if [ -n "$errors" ]; then
+            while IFS= read -r msg; do
+              echo "::error file=$file::$msg"
+            done <<< "$errors"
+            exit 1
+          fi
+          delim="EOF_$(openssl rand -hex 16)"
+          while IFS= read -r key; do
+            value=$(jq -r --arg k "$key" '.values[$k]' <<< "$result")
+            printf '%s: %s\n' "$key" "$value"
+            printf '%s<<%s\n%s\n%s\n' "$key" "$delim" "$value" "$delim" >> "$GITHUB_OUTPUT"
+          done < <(jq -r '.values | keys[]' <<< "$result")
+
   frontend:
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -89,7 +187,8 @@ jobs:
         run: just -f "$RUNNER_TEMP/rust-base/ci/common.just" -d . frontend
 
   rust:
-    runs-on: ${{ inputs.rust-runner }}
+    needs: config
+    runs-on: ${{ needs.config.outputs.rust-runner }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -146,12 +245,13 @@ jobs:
         run: just -f "$RUNNER_TEMP/rust-base/ci/common.just" -d . rust
 
       - name: Extra recipe
-        if: inputs.extra-recipe != ''
+        if: needs.config.outputs.extra-recipe != ''
         env:
-          EXTRA_RECIPE: ${{ inputs.extra-recipe }}
+          EXTRA_RECIPE: ${{ needs.config.outputs.extra-recipe }}
         run: just "$EXTRA_RECIPE"
 
   windows:
+    needs: config
     if: >-
       inputs.windows == 'always'
       || (inputs.windows == 'auto'
@@ -160,7 +260,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 45
     env:
-      TEST_SCOPE: ${{ inputs.windows-test-scope }}
+      TEST_SCOPE: ${{ needs.config.outputs.windows-test-scope }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -197,12 +297,13 @@ jobs:
 
   ci-ok:
     if: always()
-    needs: [frontend, rust, windows]
+    needs: [config, frontend, rust, windows]
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       # A skipped windows job (no `windows` label, or `windows: never`) is
-      # fine; failure or cancel is not.
+      # fine; failure or cancel is not (a failed config job skips rust and
+      # windows, and fails here).
       - name: Check results
         env:
           RESULTS: ${{ join(needs.*.result, ' ') }}

@@ -1,0 +1,22 @@
+# Synced from rust-base (sync/files/); don't edit it in the app, the next sync
+# overwrites it.
+#
+# Every PR needs a CHANGELOG entry under `## [Unreleased]` and exactly one of
+# the labels `release:patch`, `release:minor`, `release:major` or `no-release`.
+# Separate from ci.yml so that (un)labelling a PR doesn't re-run the full build.
+name: PR checks
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, labeled, unlabeled, edited]
+
+concurrency:
+  group: pr-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  pr-checks:
+    uses: RobbieMinderhoud/rust-base/.github/workflows/reusable-pr-checks.yml@v1

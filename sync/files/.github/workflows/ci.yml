@@ -1,0 +1,49 @@
+# Synced from rust-base (sync/files/); don't edit it in the app, the next sync
+# overwrites it. Per-app settings go in .github/rust-base.json.
+#
+# Every push to main (a merged PR) runs CI, including Windows, and then
+# releases. Pull requests run Windows only with the `windows` label; adding the
+# label re-runs CI for the PR. Any other label (e.g. release:patch) starts a
+# run whose `ci` job is skipped: it doesn't cancel the running CI and adds no
+# `ci / ci-ok` check.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+
+concurrency:
+  # Labels other than `windows` get their own group, so they never cancel the
+  # running CI. Adding `windows` shares the group: it replaces the running CI
+  # with one that includes Windows, so only one `ci / ci-ok` is in flight.
+  group: ci-${{ github.ref }}${{ github.event.action == 'labeled' && github.event.label.name != 'windows' && format('-label-{0}', github.event.label.name) || '' }}
+  # PRs: a new push cancels the running check. main: a running run is never
+  # cancelled, but GitHub keeps only the newest pending run per group and
+  # cancels older pending ones. Their merges ship in the next release, which
+  # takes the highest release label over all PRs merged since the last tag.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    # Keep this condition: it is what stops an unrelated label from producing
+    # a skipped (= passing) `ci / ci-ok` check.
+    if: github.event.action != 'labeled' || github.event.label.name == 'windows'
+    uses: RobbieMinderhoud/rust-base/.github/workflows/reusable-tauri-ci.yml@v1
+
+  release:
+    needs: ci
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    uses: RobbieMinderhoud/rust-base/.github/workflows/reusable-release.yml@v1
+    permissions:
+      contents: write
+      pull-requests: read
+      actions: write
+    secrets:
+      # Empty when the repo has no such secret: the release then pushes with
+      # GITHUB_TOKEN (see release.require-deploy-key).
+      RELEASE_DEPLOY_KEY: ${{ secrets.RELEASE_DEPLOY_KEY }}
