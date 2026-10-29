@@ -20,6 +20,9 @@ when it merges.
 
 ### Changed
 
+- Apps: the sync now delivers the config package pointer files (`eslint.config.js`,
+  `.prettierrc.json`, `tsconfig.json`, `tsconfig.node.json`) and Dependabot no
+  longer ignores majors of the ESLint plugins that moved into the package.
 - Merged the shared CI (formerly ci-workflows) into this template; reusable
   workflows are now `reusable-*.yml`, shared recipes and scripts live in `ci/`.
   Apps pin `@v2`; `v1` (the old ci-workflows layout) is frozen.

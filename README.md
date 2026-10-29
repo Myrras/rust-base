@@ -212,6 +212,8 @@ In an app:
 2. Replace the config files with pointers (examples in [`packages/config/README.md`](packages/config/README.md)): `eslint.config.js` re-exports `@myrras/rust-base-config/eslint`, `.prettierrc.json` is the string `"@myrras/rust-base-config/prettier"`, and `tsconfig.json` / `tsconfig.node.json` `extends` the package's files.
 3. `.prettierignore` stays the app's own (Prettier has no shared ignore file).
 
+The pointer files (`eslint.config.js`, `.prettierrc.json`, `tsconfig.json`, `tsconfig.node.json`) are in `sync/files/`, so the sync overwrites them in each app. `.prettierignore` is not synced.
+
 The template's own `.prettierrc.json` points to `./packages/config/prettier.json` by path, because self-CI runs Prettier without `pnpm install`.
 
 Releases are independent of the CI tags (`v2`); SemVer, tags `config-vX.Y.Z`:
