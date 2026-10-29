@@ -21,7 +21,15 @@ Recipes:
 - `rust`: `cargo fmt --check` (skipped on Windows), `clippy -D warnings`, `cargo test {{TEST_SCOPE}}` (`TEST_SCOPE` env, default `--workspace`)
 - `frontend`: `pnpm format:check`, `lint`, `test`, `build`
 - `ci`: `rust`, then `frontend`
-- local only: `build-signed`, `sweep`, `_signed-conf`, `_target-dir`
+- local only: `dev`, `dev-signed`, `build`, `build-signed`, `install-signed`, `check`, `test-core`, `format`, `version`, `version-check`, `sweep` (plus the private `_build-signed`, `_signed-conf`, `_target-dir`)
+
+The local recipes need no per-app settings; they read what differs from the repo:
+
+- app name: `productName` in `src-tauri/tauri.conf.json`
+- core crate (`test-core`): the one workspace package named `*-core`
+- target dir: `cargo metadata` (honours `CARGO_TARGET_DIR`)
+- signing identity (`dev-signed`, `build-signed`, `install-signed`): `src-tauri/tauri.dev-signed.conf.json`
+- scripts (`make-dmg.sh`, `sync-version.sh`): the `scripts/` dir next to `common.just`
 
 In CI the recipes run as `just -f "$RUNNER_TEMP/ci/common.just" -d . <recipe>`. Locally, each repo justfile imports the file:
 
@@ -31,7 +39,7 @@ import? '~/.ci-workflows/common.just'
 
 Callers point `~/.ci-workflows` at their local clone of this repo, e.g. `ln -s /path/to/ci-workflows ~/.ci-workflows`.
 
-A repo justfile keeps its own `test-integration` and extra recipes, and must not redefine the names above.
+A repo justfile keeps its own `default`, `test-integration` and extra recipes, and must not redefine the names above. `just` rejects a duplicate recipe; don't work around that with `set allow-duplicate-recipes` (the repo's recipe would silently win).
 
 In CI the `import?` resolves to nothing, because the path under `~` does not exist on the runner. No recipe in a caller justfile may list a `common.just` recipe as a dependency (`foo: build-signed`): the dependency is unknown, so the whole file fails to parse and breaks every recipe CI runs (`test-integration`, `extra-recipe`). Call it in the body instead (`just build-signed`). Verify with `HOME=$(mktemp -d) just --list`, which simulates CI by leaving the import unresolved.
 
